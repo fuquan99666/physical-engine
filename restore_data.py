@@ -47,10 +47,15 @@ if __name__=='__main__':
     test_dataset={
         'name':'自由落体',
         'gravity':9.81,
-        'shape':'circle',
-        'process':[
-            {'time':0,'position':(0,0),'v':(0,0)},
-        ]
+        'object_data':[{
+                'code':1,
+                'm':0,
+                'shape':'circle',
+                'process':[
+                    {'time':0,'position':(0,0),'v':(0,0),'f':(0,0)},
+                ],
+            },
+        ], 
     }
     restore_data(test_dataset)
     print(loading_data('自由落体'))
