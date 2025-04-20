@@ -13,8 +13,8 @@ data={
     ('gravity':g,)
     ('G_data':[
             'fixed':true/false,
-            (if true:[{'code':code1,'m':mass,},{'code':code1,'m':mass,}……])
-            (if false:{'time1':[time,{'code':code1,'m':mass,},{'code':code1,'m':mass,}……]})
+            (if true:[{'index':index1,'m':mass,'position':(px,py)},{'index':index1,'m':mass,'position':(px,py)}……])
+            (if false:{'time1':[time,{'index':index1,'m':mass,'position':(px,py)},{'index':index1,'m':mass,'position':(px,py)}……]})
         ],
     )
     (magnet_data:[
@@ -24,7 +24,7 @@ data={
     )
     'object_data':[
         {
-            'code':code1,
+            'index':index1,
             'm':mass,
             'shape':'object_shape',
             ('miu':摩擦系数)，
@@ -37,7 +37,7 @@ data={
             ],
         },
         {
-            'code':code2,
+            'index':index2,
             'm':mass,
             'shape':'object_shape',
             ('miu':摩擦系数)，
