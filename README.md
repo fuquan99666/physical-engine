@@ -27,6 +27,9 @@ data={
 若有其它的想法或需求，也可以告知进行修改
 下一步计划：可能会是使用matplotlib完成图像绘制
 
+
 # 5.5 updated:
 
 大作业雏形初具
+见mainwindow.py
+
