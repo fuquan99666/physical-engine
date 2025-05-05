@@ -1,10 +1,11 @@
 #本代码使用的是pyqt6，实现的是一个qt界面
+
 """ QMainWindow 是 PyQt/PySide 中用于创建主窗口的类。它通常包含以下区域：
         菜单栏(Menu Bar)
         工具栏(Toolbar)
         状态栏(Status Bar)
         中央区域(Central Widget) """
-
+import pymunk
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
@@ -13,6 +14,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor,QAction
 import pyqtgraph as pg
+
 
 
 class MainWindow(QMainWindow):                                #继承一个主窗口的类
@@ -118,6 +120,10 @@ class MainWindow(QMainWindow):                                #继承一个主�
 
         central_widget.setLayout(main_layout)
 
+        self.space=pymunk.Space()
+        self.space.gravity=(0,-self.gravity)
+
+
         # 动画定时器
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_scene)
@@ -134,31 +140,64 @@ class MainWindow(QMainWindow):                                #继承一个主�
             self.timer.stop()
 
     def reset_simulation(self):
+
+        # 重新创建 space
+        self.space = pymunk.Space()
+        self.space.gravity = (0, -self.gravity)
+
+        # 清除视图中的球
+        for ball_data in self.all_ball:
+            self.scene.removeItem(ball_data["item"])
+        self.all_ball.clear()
+
+        # 清空图表
+        self.selected_ball_data = None
+        self.plot_data.clear()
+        self.plot_curve.setData([])
+
         self.running=False
         self.timer.stop()
         self.time=0
 
-        for ball_data in self.all_ball:
-            x=ball_data.get("x")
-            y=ball_data.get("y")
-            ball_data["item"].setPos(x,y)
-            ball_data["velocity"]=0
-            """         self.plot_data.clear()
-            self.plot_curve.setData([]) """
 
     def add_ball(self):
-        ball=QGraphicsEllipseItem(0,0,30,30)
-        ball.setBrush(QColor("blue"))
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable,True)
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable,True)
-        self.scene.addItem(ball)
-        ball.mousePressEvent=lambda event,b=ball:self.select_ball(b)
-        ball.setPos(100,100)
+        radius = 15
+        mass = 1
+        moment = pymunk.moment_for_circle(mass, 0, radius)
 
-        self.all_ball.append({"item":ball,"velocity":0,"x":100,"y":100})
+        body = pymunk.Body(mass, moment)
+        body.position = (100, 100)
+        shape = pymunk.Circle(body, radius)
+        shape.elasticity = 0.7
+        shape.friction = 0.5
+
+        self.space.add(body, shape)
+
+        ball = QGraphicsEllipseItem(0, 0, 30, 30)
+        ball.setBrush(QColor("blue"))
+        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable, True)
+        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.scene.addItem(ball)
+        ball.mousePressEvent = lambda event, b=ball: self.select_ball(b)
+        ball.setPos(body.position[0], 600 - body.position[1])
+
+        # 在鼠标拖动时，持续更新物理引擎中的位置
+
+        ball.setAcceptHoverEvents(True)
+
+        def drag_ball(event):
+            mouse_pos = event.scenePos()
+            body.position = mouse_pos.x(), 600 - mouse_pos.y()  # 更新物理位置
+            ball.setPos(mouse_pos.x(), mouse_pos.y())  # 更新图形位置
+
+        ball.mouseMoveEvent = drag_ball
+
+        self.all_ball.append({"item": ball, "body": body, "shape": shape})
+
 
     def update_gravity(self, value):
         self.gravity = value
+        self.space.gravity=(0,-value)
         self.gravity_label.setText(f"Gravity: {value}")
 
 
@@ -166,7 +205,10 @@ class MainWindow(QMainWindow):                                #继承一个主�
         for ball_data in self.all_ball:
             if ball_data["item"]==ball_item:
                 self.selected_ball_data=ball_data
-                print("Selected a ball for plotting!")
+                body=ball_data["body"]
+                item=ball_data["item"]
+                body.position=item.pos().x(),600-item.pos().y()
+                
                 break
 
     def quit_select(self):
@@ -175,44 +217,37 @@ class MainWindow(QMainWindow):                                #继承一个主�
     def delete_selected_ball(self):
         if self.selected_ball_data:
             ball=self.selected_ball_data["item"]
+            body=self.selected_ball_data["body"]
+            shape=self.selected_ball_data["shape"]
             self.scene.removeItem(ball)#从scene中移除图形
             self.all_ball.remove(self.selected_ball_data)#从数据结构中移除这个球
             self.selected_ball_data=None
             self.plot_data.clear()
             self.plot_curve.setData([])
+
+
+            self.space.remove(body,shape)
+
+
             print("Deleted selected ball.")
         else:
             print("No ball selected to delete.")
 
-
-
-
-
-
     def update_scene(self):
-        # 更新小球位置（自由落体）
+        #推进物理模拟
+        self.space.step(0.05)
+
 
         for ball_data in self.all_ball:
-            ball=ball_data["item"]
-            velocity=ball_data["velocity"]
-            pos = ball.pos()
-            velocity += self.gravity * 0.05  # 简化的重力加速度
-            new_y = pos.y() + velocity
-
-            # 到达底部反弹
-            if new_y > 590:
-                new_y = 590
-                velocity *= -0.7  # 有损反弹
-
-            ball.setPos(ball.pos().x(), new_y)
-            ball_data["velocity"]=velocity
+            item=ball_data["item"]
+            body=ball_data["body"]
+            pos =body.position
+            item.setPos(pos[0],600-pos[1])
 
 
+            if self.selected_ball_data and self.selected_ball_data["item"]==item:
 
-
-            if self.selected_ball_data and self.selected_ball_data["item"]==ball:
-
-                self.plot_data.append(new_y)
+                self.plot_data.append(pos[1])
                 if len(self.plot_data) > 100:
                     self.plot_data = self.plot_data[-100:]
                 self.plot_curve.setData(self.plot_data)  
