@@ -14,9 +14,16 @@ class DataHandler:
 
     def collect_data(self,bodies,current_time):
         """收集数据，在确认数据类型后再确定形式"""
-        for body in bodies:
-            k_energe=DataCalculator.kinetic_energy(body)
-            p_energe=DataCalculator.potential_energy(body)
+        for index,body in enumerate(bodies):
+            new_row={
+                "index":index,
+                "timestamp": current_time,
+                "x": body.position.x,
+                "y": body.position.y,
+                "vx": body.velocity.x,
+                "vy": body.velocity.y,
+            }
+            self.databuffer.append(new_row)
 
 
     def reset(self):
