@@ -14,7 +14,6 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor,QAction
 import pyqtgraph as pg
 
-print("hello world!")
 
 class MainWindow(QMainWindow):                                #继承一个主窗口的类
     def __init__(self):           #构造函数          
