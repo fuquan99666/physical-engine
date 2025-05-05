@@ -1,5 +1,4 @@
 #本代码使用的是pyqt6，实现的是一个qt界面
-#提交到main分支了，抱歉
 """ QMainWindow 是 PyQt/PySide 中用于创建主窗口的类。它通常包含以下区域：
         菜单栏(Menu Bar)
         工具栏(Toolbar)
