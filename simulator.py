@@ -3,15 +3,14 @@ import pymunk
 from pymunk import Vec2d
 from data_handler import DataHandler
 
-
 class PhysicsSimulator:
     def __init__(self):
         #基础参数
         self.space=pymunk.Space()
-        self.space.gravity=(0,981)
-        self.bodies=[]
-        self.time_scale=1.0
-        self.data_handler=DataHandler()
+        self.space.gravity=(0,981)#重力
+        self.bodies=[]#全部物体
+        self.time_scale=1.0#用于控制时间流速
+        self.data_handler=DataHandler()#统计数据
 
     def get_gravity(self):
         return self.space.gravity
@@ -21,7 +20,7 @@ class PhysicsSimulator:
 
     def add_circle(self,p_x,p_y,mass,out_radius,elasticity=0.5,inner_radius=0):
 
-        #添加圆形物体
+        #添加圆形物体(x,y,质量，外半径，伸缩系数，内半径（缺省为零）)
         moment=pymunk.moment_for_circle(mass,inner_radius,out_radius)
         body=pymunk.Body(mass,moment)
         body.position=(p_x,p_y)
@@ -33,7 +32,7 @@ class PhysicsSimulator:
 
     def add_box(self,p_x,p_y,height,width,mass,elasticity=0.5):
 
-        #添加矩形物体
+        #添加矩形物体(x,y,高度，宽度，质量，伸缩系数)
         moment=pymunk.moment_for_box(mass,(width,height))
         body=pymunk.Body(mass,moment)
         body.position=(p_x,p_y)
@@ -45,7 +44,7 @@ class PhysicsSimulator:
 
     def add_segment(self,start,destination,mass,radius=0.1,elasticity=0.5):
 
-        #添加线段（类似于杆）
+        #添加线段（类似于杆）(起点，终点，质量，半径（就是碰撞的宽度，缺省0.1），伸缩系数）
         moment=pymunk.moment_for_segment(mass,start,destination,radius)
         body=pymunk.Body(mass,moment)
         body.position=(start+destination)/2
@@ -57,7 +56,7 @@ class PhysicsSimulator:
 
     def add_spring(self,body1,body2,stiffness,damping,anchor1=(0,0),anchor2=(0,0),rest_length=100):
 
-        #添加指定地点的弹簧
+        #添加指定地点的弹簧(连接的物体一，物体二，劲度系数，阻尼，弹簧两端在物体上连接的具体位置（相对于物体中心坐标一，二，自然长度)
         spring=pymunk.DampedSpring(
             body1,body2,anchor1,anchor2,rest_length,stiffness,damping
         )
@@ -94,4 +93,3 @@ class PhysicsSimulator:
         #清空物理空间
         self.space.remove(self.space.bodies)
         self.bodies=[]
-
