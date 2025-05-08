@@ -2,6 +2,7 @@ import pandas as pd
 from datetime import datetime
 from pymunk import Body
 from simulator import PhysicsSimulator
+import sqlite3
 
 class DataHandler:
     def __init__(self):
@@ -16,7 +17,7 @@ class DataHandler:
         """收集数据，在确认数据类型后再确定形式"""
         for index,body in enumerate(bodies):
             new_row={
-                "index":index,
+                "idx":index,
                 "timestamp": current_time,
                 "x": body.position.x,
                 "y": body.position.y,
@@ -29,10 +30,37 @@ class DataHandler:
     def reset(self):
         '''清空数据重新开始'''
         self.buffer.clear()
-
-
         self.current_sim_time=0.0
-
+    
+    def save_to_sqlite(self, db_name="data.db"):
+        conn = sqlite3.connect("dataset\\"+db_name)        # 连接到数据库
+        cursor = conn.cursor()                 # 创建游标对象
+        # 创建表（如果不存在）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS body_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                idx INTEGER,
+                timestamp REAL,
+                x REAL,
+                y REAL,
+                vx REAL,
+                vy REAL
+            )
+        ''')
+        
+        # 准备批量插入的数据
+        data_to_insert = [
+            (row["idx"], row["timestamp"], row["x"], row["y"], row["vx"], row["vy"])
+            for row in self.databuffer
+        ]
+        
+        # 执行批量插入
+        cursor.executemany('''
+            INSERT INTO body_data (idx, timestamp, x, y, vx, vy)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', data_to_insert)
+        conn.commit()  # 提交事务
+        conn.close()   # 关闭连接
 
 class DataCalculator:
     @staticmethod

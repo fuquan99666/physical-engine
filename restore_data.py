@@ -55,5 +55,3 @@ if __name__=='__main__':
     restore_data(test_dataset)
     print(loading_data('自由落体'))
     #delete_file('自由落体')
-
-
