@@ -25,15 +25,13 @@ class DataHandler:
                 "vy": body.velocity.y,
             }
             self.databuffer.append(new_row)
-
-
     def reset(self):
         '''清空数据重新开始'''
         self.buffer.clear()
         self.current_sim_time=0.0
     
-    def save_to_sqlite(self, db_name="data.db"):
-        conn = sqlite3.connect("dataset\\"+db_name)        # 连接到数据库
+    def save_to_sqlite(self, db_name="data"):
+        conn = sqlite3.connect("dataset\\"+db_name+".db")        # 连接到数据库
         cursor = conn.cursor()                 # 创建游标对象
         # 创建表（如果不存在）
         cursor.execute('''
@@ -47,7 +45,6 @@ class DataHandler:
                 vy REAL
             )
         ''')
-        
         # 准备批量插入的数据
         data_to_insert = [
             (row["idx"], row["timestamp"], row["x"], row["y"], row["vx"], row["vy"])

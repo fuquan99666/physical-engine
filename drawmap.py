@@ -5,7 +5,7 @@ from datetime import datetime
 
 #查询物体的位置并绘制图像
 def time_position_byindex(db_name,*object_idx):
-    conn=sqlite3.connect("dataset\\"+db_name)
+    conn=sqlite3.connect("dataset\\"+db_name+".db")
 
     plt.figure(figsize=(6,12))
     plt.subplot(2,1,1)
@@ -39,7 +39,7 @@ def time_position_byindex(db_name,*object_idx):
 
 #输入物体编号范围
 def time_position_byrange(db_name,startrange,endrange):#结果包含前端点，但是不包含后端点
-    conn=sqlite3.connect("dataset\\"+db_name)
+    conn=sqlite3.connect("dataset\\"+db_name+".db")
 
     plt.figure(figsize=(6,12))
     plt.subplot(2,1,1)
@@ -72,7 +72,7 @@ def time_position_byrange(db_name,startrange,endrange):#结果包含前端点，
     plt.show()
 
 def time_v_byindex(db_name,*object_idx):
-    conn=sqlite3.connect("dataset\\"+db_name)
+    conn=sqlite3.connect("dataset\\"+db_name+".db")
 
     plt.figure(figsize=(6,12))
     plt.subplot(2,1,1)
@@ -105,7 +105,7 @@ def time_v_byindex(db_name,*object_idx):
     plt.show()
 
 def time_v_byrange(db_name,startrange,endrange):
-    conn=sqlite3.connect("dataset\\"+db_name)
+    conn=sqlite3.connect("dataset\\"+db_name+".db")
 
     plt.figure(figsize=(6,12))
     plt.subplot(2,1,1)
