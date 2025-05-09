@@ -35,7 +35,7 @@ class ElectricField(Field):
         self.charge_density=charge_density
 
     def calculate_field_force(self,body:pymunk.Body):
-
+        pass
 
 
 class GravitationalField(Field):
