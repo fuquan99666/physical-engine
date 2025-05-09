@@ -1,262 +1,269 @@
-#本代码使用的是pyqt6，实现的是一个qt界面
-
-""" QMainWindow 是 PyQt/PySide 中用于创建主窗口的类。它通常包含以下区域：
-        菜单栏(Menu Bar)
-        工具栏(Toolbar)
-        状态栏(Status Bar)
-        中央区域(Central Widget) """
 import pymunk
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
-    QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,QToolBar
+    QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
+    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor,QAction
+from PyQt6.QtGui import QColor, QAction, QPen
 import pyqtgraph as pg
 
+from add_object_dialog import AddObjectDialog
+from simulator import PhysicsSimulator as ph
 
 
-class MainWindow(QMainWindow):                                #继承一个主窗口的类
-    def __init__(self):           #构造函数          
-        super().__init__()          #基类初始化
-        self.setWindowTitle("2D Physics Engine UI")   #设置窗口标题
-        self.resize(1200, 700)          #设置窗口大小，1000*600像素
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("2D Physics Engine UI")
+        self.resize(1200, 700)
 
-        #设置工具栏
-        self.toolbar=QToolBar("Main ToolBar")
+        self.gravity = 10
+        self.simulator = ph()
+        self.simulator.space.gravity = (0, -self.gravity)
+        self.simulator.space.collision_slop = 0.01  # 可选：更贴合
+
+        self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
 
-        start_action=QAction("Start/Pause",self)
-        start_action.triggered.connect(self.toggle_simulation)
-        self.toolbar.addAction(start_action)
+        self._init_toolbar()
+        self._init_ui()
 
-        reset_action=QAction("Reset",self)
-        reset_action.triggered.connect(self.reset_simulation)
-        self.toolbar.addAction(reset_action)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_scene)
+        self.running = False
+        self.time = 0
 
+        self.spring_selection=[]
+        self.springs=[]
 
-        add_ball_action=QAction("Add a ball",self)
-        add_ball_action.triggered.connect(self.add_ball)
-        self.toolbar.addAction(add_ball_action)
+    def _init_toolbar(self):
+        actions = [
+            ("Start/Pause", self.toggle_simulation),
+            ("Reset", self.reset_simulation),
+            ("Delete Selected", self.delete_selected_item),
+            ("Quit Selected", self.quit_select),
+            ("Add Object", self.show_add_object_dialog),
+            ("Add Spring",self.prepare_add_spring)
+        ]
+        for name, slot in actions:
+            action = QAction(name, self)
+            action.triggered.connect(slot)
+            self.toolbar.addAction(action)
 
-        delete_ball_action=QAction("Delete Selected",self)
-        delete_ball_action.triggered.connect(self.delete_selected_ball)
-        self.toolbar.addAction(delete_ball_action)
-
-        quit_select_action=QAction("quit selected",self)
-        quit_select_action.triggered.connect(self.quit_select)
-        self.toolbar.addAction(quit_select_action)
-
-
-        # 主界面结构
+    def _init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # 1. 场景 + 刚体图形
         self.scene = QGraphicsScene()
         self.scene.setSceneRect(0, 0, 600, 600)
-
         self.view = QGraphicsView(self.scene)
         self.view.setMinimumSize(400, 400)
         self.view.setStyleSheet("background: #f0f0f0")
 
-        #物体类定义
+        self.selected_item_data = None
+        self.all_item = []
 
-        self.selected_ball_data=None 
-        self.all_ball=[]
-
-        """         ball = QGraphicsEllipseItem(0, 0, 30, 30)
-        ball.setBrush(QColor("red"))  # 修改为 QColor 处理颜色
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable,True)
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable,True)
-        self.scene.addItem(ball)
-        ball.setPos(300, 0)
-
-        self.all_ball=[{"item":ball,"velocity":0,"x":300,"y":0}]
-        self.all_ball.append({"item":ball,"velocity":0,"x":300,"y":0}) """
-
-        #物理量设置
-
-        self.gravity = 10  # 初始重力
-
-        # 2. 控制面板
         self.start_btn = QPushButton("Start")
-        self.gravity_slider = QSlider(Qt.Orientation.Horizontal)  # 正确指定横向滑动条
-        self.gravity_slider.setMinimum(0)
-        self.gravity_slider.setMaximum(30)
+        self.gravity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.gravity_slider.setRange(-100, 100)
         self.gravity_slider.setValue(self.gravity)
         self.gravity_label = QLabel(f"Gravity: {self.gravity}")
 
-
-        #信号与槽
         self.start_btn.clicked.connect(self.toggle_simulation)
         self.gravity_slider.valueChanged.connect(self.update_gravity)
 
-
-        #这里创建了一个垂直布局，里面包含start，重力标签，以及重力条
         control_layout = QVBoxLayout()
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.gravity_label)
         control_layout.addWidget(self.gravity_slider)
 
-        # 3. 实时图像
         self.plot = pg.PlotWidget()
         self.plot.setYRange(0, 400)
         self.plot_data = []
         self.plot_curve = self.plot.plot(self.plot_data, pen='g')
 
-        # 布局整合，将上面的和图像结合了
-        right_layout = QVBoxLayout()  #这是右侧的
+        right_layout = QVBoxLayout()
         right_layout.addLayout(control_layout)
         right_layout.addWidget(self.plot)
 
-
-        #最大布局，水平的
         main_layout = QHBoxLayout()
         main_layout.addWidget(self.view)
         main_layout.addLayout(right_layout)
 
         central_widget.setLayout(main_layout)
 
-        self.space=pymunk.Space()
-        self.space.gravity=(0,-self.gravity)
-
-
-        # 动画定时器
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_scene)
-        self.running = False
-        self.time = 0
-
     def toggle_simulation(self):
         self.running = not self.running
+        self.start_btn.setText("Pause" if self.running else "Start")
         if self.running:
-            self.start_btn.setText("Pause")
-            self.timer.start(50)
+            self.timer.start(16)  # 60 FPS
         else:
-            self.start_btn.setText("Start")
             self.timer.stop()
 
     def reset_simulation(self):
+        self.simulator = ph()
+        self.simulator.space.gravity = (0, -self.gravity)
 
-        # 重新创建 space
-        self.space = pymunk.Space()
-        self.space.gravity = (0, -self.gravity)
+        for obj in self.all_item:
+            self.scene.removeItem(obj["item"])
+        self.all_item.clear()
 
-        # 清除视图中的球
-        for ball_data in self.all_ball:
-            self.scene.removeItem(ball_data["item"])
-        self.all_ball.clear()
-
-        # 清空图表
-        self.selected_ball_data = None
+        self.selected_item_data = None
         self.plot_data.clear()
         self.plot_curve.setData([])
 
-        self.running=False
+        self.running = False
         self.timer.stop()
-        self.time=0
-
-
-    def add_ball(self):
-        radius = 15
-        mass = 1
-        moment = pymunk.moment_for_circle(mass, 0, radius)
-
-        body = pymunk.Body(mass, moment)
-        body.position = (100, 100)
-        shape = pymunk.Circle(body, radius)
-        shape.elasticity = 0.7
-        shape.friction = 0.5
-
-        self.space.add(body, shape)
-
-        ball = QGraphicsEllipseItem(0, 0, 30, 30)
-        ball.setBrush(QColor("blue"))
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable, True)
-        ball.setFlag(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable, True)
-        self.scene.addItem(ball)
-        ball.mousePressEvent = lambda event, b=ball: self.select_ball(b)
-        ball.setPos(body.position[0], 600 - body.position[1])
-
-        # 在鼠标拖动时，持续更新物理引擎中的位置
-
-        ball.setAcceptHoverEvents(True)
-
-        def drag_ball(event):
-            mouse_pos = event.scenePos()
-            body.position = mouse_pos.x(), 600 - mouse_pos.y()  # 更新物理位置
-            ball.setPos(mouse_pos.x(), mouse_pos.y())  # 更新图形位置
-
-        ball.mouseMoveEvent = drag_ball
-
-        self.all_ball.append({"item": ball, "body": body, "shape": shape})
-
+        self.time = 0
 
     def update_gravity(self, value):
         self.gravity = value
-        self.space.gravity=(0,-value)
+        self.simulator.space.gravity = (0, -value)
         self.gravity_label.setText(f"Gravity: {value}")
 
+    def show_add_object_dialog(self):
+        dialog = AddObjectDialog()
+        if not dialog.exec():
+            return
 
-    def select_ball(self,ball_item):
-        for ball_data in self.all_ball:
-            if ball_data["item"]==ball_item:
-                self.selected_ball_data=ball_data
-                body=ball_data["body"]
-                item=ball_data["item"]
-                body.position=item.pos().x(),600-item.pos().y()
-                
+        values = dialog.get_values()
+        obj_type = values["type"]
+        x, y = values["x"], values["y"]
+        mass = values["mass"]
+        a = values["r_or_w"]
+        b = values["h_or_r2"]
+        is_static = values.get("static", False)
+
+        if obj_type == "Circle":
+            body = self.simulator.add_circle(x, y, mass, a)
+            item = QGraphicsEllipseItem(0, 0, 2*a, 2*a)
+        elif obj_type == "Box":
+            body = self.simulator.add_box(x, y, b, a, mass)
+            item = QGraphicsRectItem(0, 0, a, b)
+        elif obj_type == "Segment":
+            start = pymunk.Vec2d(x, y)
+            end = pymunk.Vec2d(x + a, y + b)
+            body = self.simulator.add_segment(start, end, mass, radius=5, static=is_static)
+            item = QGraphicsLineItem()
+        else:
+            return
+
+        self._configure_item(item, body, is_static)
+        self.all_item.append({"item": item, "body": body})
+        self.scene.addItem(item)
+        self.update_graphics_position(item, body)
+
+    def _configure_item(self, item, body, is_static):
+        if hasattr(item, 'setBrush'):
+            item.setBrush(QColor("green"))
+        if isinstance(item, QGraphicsLineItem):
+            shape = next(iter(body.shapes))
+            pen = QPen(QColor("green"))
+            pen.setWidthF(shape.radius * 2)  # 匹配物理厚度
+            item.setPen(pen)
+
+        item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
+        item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, True)
+        item.setAcceptHoverEvents(True)
+        item.mousePressEvent = lambda e, b=item: self.select_item(b)
+        if not is_static:
+            item.mouseMoveEvent = lambda e, b=item, bd=body: self.drag_item(b, bd, e)
+
+    def drag_item(self, item, body, event):
+        pos = event.scenePos()
+        body.position = (pos.x(), 600 - pos.y())
+        self.update_graphics_position(item, body)
+
+    def update_graphics_position(self, item, body):
+        if isinstance(item, QGraphicsLineItem):
+            shape = next(iter(body.shapes))
+            a = body.position + shape.a.rotated(body.angle)
+            b = body.position + shape.b.rotated(body.angle)
+            item.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
+        else:
+            item.setPos(body.position.x, 600 - body.position.y)
+
+    def select_item(self, item):
+        for entry in self.all_item:
+            if entry["item"] == item:
+                self.selected_item_data = entry
+                if self.spring_selection is not None:
+                    self.spring_selection.append(entry)
+                    if len(self.spring_selection)==2:
+                      
+                        self.add_spring_between_bodies()
+                        self.spring_selection=None
+                        self.statusBar().clearMessage()
                 break
 
+
+    def add_spring_between_bodies(self):
+        e1,e2=self.spring_selection
+        b1,b2=e1["body"],e2["body"]
+        if b1 is b2:
+            print("Cannot connect a spring to the same object!")
+        
+            return 
+        spring=self.simulator.add_spring(
+            b1,b2,
+            stiffness=200,damping=10,
+            anchor1=(0,0),anchor2=(0,0),
+            rest_length=(b1.position-b2.position).length
+        )
+        line=QGraphicsLineItem()
+        pen=QPen(QColor("red"))
+        pen.setWidth(5)
+        line.setPen(pen)
+        self.scene.addItem(line)
+        self.springs.append((spring,line))
+        print("the spring has been created.You just need to click the start button so that you can see it.")
+
     def quit_select(self):
-        self.selected_ball_data=None
-    
-    def delete_selected_ball(self):
-        if self.selected_ball_data:
-            ball=self.selected_ball_data["item"]
-            body=self.selected_ball_data["body"]
-            shape=self.selected_ball_data["shape"]
-            self.scene.removeItem(ball)#从scene中移除图形
-            self.all_ball.remove(self.selected_ball_data)#从数据结构中移除这个球
-            self.selected_ball_data=None
-            self.plot_data.clear()
-            self.plot_curve.setData([])
+        self.selected_item_data = None
 
+    def delete_selected_item(self):
+        if not self.selected_item_data:
+            return
+        item = self.selected_item_data["item"]
+        body = self.selected_item_data["body"]
+        self.scene.removeItem(item)
+        self.simulator.space.remove(body, *body.shapes)
+        self.all_item.remove(self.selected_item_data)
+        self.selected_item_data = None
+        self.plot_data.clear()
+        self.plot_curve.setData([])
 
-            self.space.remove(body,shape)
+    def prepare_add_spring(self):
+        self.spring_selection=[]
+        self.statusBar().showMessage("Select two objects to add a spring.")
 
-
-            print("Deleted selected ball.")
-        else:
-            print("No ball selected to delete.")
 
     def update_scene(self):
-        #推进物理模拟
-        self.space.step(0.05)
+        self.simulator.space.step(1 / 60.0)
+        for entry in self.all_item:
+            item = entry["item"]
+            body = entry["body"]
+            self.update_graphics_position(item, body)
 
-
-        for ball_data in self.all_ball:
-            item=ball_data["item"]
-            body=ball_data["body"]
-            pos =body.position
-            item.setPos(pos[0],600-pos[1])
-
-
-            if self.selected_ball_data and self.selected_ball_data["item"]==item:
-
-                self.plot_data.append(pos[1])
+            if self.selected_item_data and self.selected_item_data["item"] == item:
+                self.plot_data.append(body.position.y)
                 if len(self.plot_data) > 100:
                     self.plot_data = self.plot_data[-100:]
-                self.plot_curve.setData(self.plot_data)  
+                self.plot_curve.setData(self.plot_data)
+
+        for spring,line in self.springs:
+            a=spring.a.position+spring.anchor_a.rotated(spring.a.angle)
+            b=spring.b.position+spring.anchor_b.rotated(spring.b.angle)
+            line.setLine(a.x,600-a.y,b.x,600-b.y)
 
 def main():
-    app = QApplication(sys.argv)  # 创建应用程序
-    window = MainWindow()  # 创建窗口
-    window.show()  # 显示窗口
-    sys.exit(app.exec())  # 启动应用程序的事件循环
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
