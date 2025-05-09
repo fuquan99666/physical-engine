@@ -3,15 +3,14 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
-    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem
+    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QAction, QPen
+from PyQt6.QtCore import Qt, QTimer, QPointF
+from PyQt6.QtGui import QColor, QAction, QPen, QPainter
 import pyqtgraph as pg
 
 from add_object_dialog import AddObjectDialog
 from simulator import PhysicsSimulator as ph
-
 
 
 class MainWindow(QMainWindow):
@@ -23,7 +22,7 @@ class MainWindow(QMainWindow):
         self.gravity = 10
         self.simulator = ph()
         self.simulator.space.gravity = (0, -self.gravity)
-        self.simulator.space.collision_slop = 0.01  # 可选：更贴合
+        self.simulator.space.collision_slop = 0.01
 
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
@@ -36,8 +35,8 @@ class MainWindow(QMainWindow):
         self.running = False
         self.time = 0
 
-        self.spring_selection=[]
-        self.springs=[]
+        self.spring_selection = None
+        self.springs = []
 
     def _init_toolbar(self):
         actions = [
@@ -46,7 +45,7 @@ class MainWindow(QMainWindow):
             ("Delete Selected", self.delete_selected_item),
             ("Quit Selected", self.quit_select),
             ("Add Object", self.show_add_object_dialog),
-            ("Add Spring",self.prepare_add_spring)
+            ("Add Spring", self.prepare_add_spring)
         ]
         for name, slot in actions:
             action = QAction(name, self)
@@ -62,6 +61,7 @@ class MainWindow(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.view.setMinimumSize(400, 400)
         self.view.setStyleSheet("background: #f0f0f0")
+        self.view.setRenderHints(QPainter.RenderHint.Antialiasing)
 
         self.selected_item_data = None
         self.all_item = []
@@ -89,9 +89,17 @@ class MainWindow(QMainWindow):
         right_layout.addLayout(control_layout)
         right_layout.addWidget(self.plot)
 
+        right_widget=QWidget()
+        right_widget.setLayout(right_layout)
+
+        splitter=QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.view)
+        splitter.addWidget(right_widget)
+        splitter.setSizes([800,400])
+
         main_layout = QHBoxLayout()
-        main_layout.addWidget(self.view)
-        main_layout.addLayout(right_layout)
+        main_layout.addWidget(splitter)
+
 
         central_widget.setLayout(main_layout)
 
@@ -99,7 +107,7 @@ class MainWindow(QMainWindow):
         self.running = not self.running
         self.start_btn.setText("Pause" if self.running else "Start")
         if self.running:
-            self.timer.start(16)  # 60 FPS
+            self.timer.start(16)
         else:
             self.timer.stop()
 
@@ -139,10 +147,10 @@ class MainWindow(QMainWindow):
 
         if obj_type == "Circle":
             body = self.simulator.add_circle(x, y, mass, a)
-            item = QGraphicsEllipseItem(0, 0, 2*a, 2*a)
+            item = QGraphicsEllipseItem(-a, -a, 2*a, 2*a)
         elif obj_type == "Box":
             body = self.simulator.add_box(x, y, b, a, mass)
-            item = QGraphicsRectItem(0, 0, a, b)
+            item = QGraphicsRectItem(-a/2, -b/2, a, b)
         elif obj_type == "Segment":
             start = pymunk.Vec2d(x, y)
             end = pymunk.Vec2d(x + a, y + b)
@@ -154,7 +162,7 @@ class MainWindow(QMainWindow):
         self._configure_item(item, body, is_static)
         self.all_item.append({"item": item, "body": body})
         self.scene.addItem(item)
-        self.update_graphics_position(item, body)
+        self.update_graphics_position(item, body, force=True)
 
     def _configure_item(self, item, body, is_static):
         if hasattr(item, 'setBrush'):
@@ -162,7 +170,7 @@ class MainWindow(QMainWindow):
         if isinstance(item, QGraphicsLineItem):
             shape = next(iter(body.shapes))
             pen = QPen(QColor("green"))
-            pen.setWidthF(shape.radius * 2)  # 匹配物理厚度
+            pen.setWidthF(shape.radius * 2)
             item.setPen(pen)
 
         item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
@@ -175,16 +183,28 @@ class MainWindow(QMainWindow):
     def drag_item(self, item, body, event):
         pos = event.scenePos()
         body.position = (pos.x(), 600 - pos.y())
-        self.update_graphics_position(item, body)
+        body.velocity = (0, 0)  # 停止速度防止跳动
+        self.update_graphics_position(item, body, force=True)
 
-    def update_graphics_position(self, item, body):
+    def update_graphics_position(self, item, body, force=False):
         if isinstance(item, QGraphicsLineItem):
             shape = next(iter(body.shapes))
-            a = body.position + shape.a.rotated(body.angle)
-            b = body.position + shape.b.rotated(body.angle)
+
+            a = body.position + shape.a
+            b = body.position + shape.b
             item.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
+
         else:
-            item.setPos(body.position.x, 600 - body.position.y)
+            x, y = body.position.x, 600 - body.position.y
+            target_pos = QPointF(x, y)
+            if force or not hasattr(item, 'last_pos'):
+                item.setPos(target_pos)
+                item.last_pos = target_pos
+            else:
+                current_pos = item.last_pos
+                smoothed = current_pos * 0.7 + target_pos * 0.3  #这个是平缓插值
+                item.setPos(smoothed)
+                item.last_pos = smoothed
 
     def select_item(self, item):
         for entry in self.all_item:
@@ -192,34 +212,31 @@ class MainWindow(QMainWindow):
                 self.selected_item_data = entry
                 if self.spring_selection is not None:
                     self.spring_selection.append(entry)
-                    if len(self.spring_selection)==2:
-                      
+                    if len(self.spring_selection) == 2:
                         self.add_spring_between_bodies()
-                        self.spring_selection=None
+                        self.spring_selection = None
                         self.statusBar().clearMessage()
                 break
 
-
     def add_spring_between_bodies(self):
-        e1,e2=self.spring_selection
-        b1,b2=e1["body"],e2["body"]
+        e1, e2 = self.spring_selection
+        b1, b2 = e1["body"], e2["body"]
         if b1 is b2:
             print("Cannot connect a spring to the same object!")
-        
-            return 
-        spring=self.simulator.add_spring(
-            b1,b2,
-            stiffness=200,damping=10,
-            anchor1=(0,0),anchor2=(0,0),
-            rest_length=(b1.position-b2.position).length
+            return
+        spring = self.simulator.add_spring(
+            b1, b2,
+            stiffness=200, damping=10,
+            anchor1=(0, 0), anchor2=(0, 0),
+            rest_length=(b1.position - b2.position).length
         )
-        line=QGraphicsLineItem()
-        pen=QPen(QColor("red"))
+        line = QGraphicsLineItem()
+        pen = QPen(QColor("red"))
         pen.setWidth(5)
         line.setPen(pen)
         self.scene.addItem(line)
-        self.springs.append((spring,line))
-        print("the spring has been created.You just need to click the start button so that you can see it.")
+        self.springs.append((spring, line))
+        print("Spring created. Click Start to see it in action.")
 
     def quit_select(self):
         self.selected_item_data = None
@@ -237,12 +254,13 @@ class MainWindow(QMainWindow):
         self.plot_curve.setData([])
 
     def prepare_add_spring(self):
-        self.spring_selection=[]
+        self.spring_selection = []
         self.statusBar().showMessage("Select two objects to add a spring.")
 
-
     def update_scene(self):
-        self.simulator.space.step(1 / 60.0)
+        for _ in range(3):  # 多步模拟提升平滑度
+            self.simulator.space.step(1 / 180.0)
+
         for entry in self.all_item:
             item = entry["item"]
             body = entry["body"]
@@ -254,16 +272,18 @@ class MainWindow(QMainWindow):
                     self.plot_data = self.plot_data[-100:]
                 self.plot_curve.setData(self.plot_data)
 
-        for spring,line in self.springs:
-            a=spring.a.position+spring.anchor_a.rotated(spring.a.angle)
-            b=spring.b.position+spring.anchor_b.rotated(spring.b.angle)
-            line.setLine(a.x,600-a.y,b.x,600-b.y)
+        for spring, line in self.springs:
+            a = spring.a.position + spring.anchor_a.rotated(spring.a.angle)
+            b = spring.b.position + spring.anchor_b.rotated(spring.b.angle)
+            line.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
+
 
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
