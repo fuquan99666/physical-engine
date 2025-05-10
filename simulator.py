@@ -51,7 +51,8 @@ class PhysicsSimulator:
             moment=pymunk.moment_for_segment(mass,start,destination,radius)
             body=pymunk.Body(mass,moment)
         body.position=(start+destination)/2
-        shape=pymunk.Segment(body,start,destination,radius)
+        
+        shape=pymunk.Segment(body,start-body.position,destination-body.position,radius)
         shape.elasticity=elasticity
         self.space.add(body,shape)
         self.bodies.append(body)

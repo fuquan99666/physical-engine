@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self.simulator = ph()
         self.simulator.space.gravity = (0, -self.gravity)
         self.simulator.space.collision_slop = 0.01
+        self.spring_update_counter=0
 
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
@@ -185,13 +186,17 @@ class MainWindow(QMainWindow):
         body.position = (pos.x(), 600 - pos.y())
         body.velocity = (0, 0)  # 停止速度防止跳动
         self.update_graphics_position(item, body, force=True)
-
+        for spring,line in self.springs:
+            if spring.a is body or spring.b is body:
+                self.update_spring_line_with_smoothing(spring,line,1)
     def update_graphics_position(self, item, body, force=False):
         if isinstance(item, QGraphicsLineItem):
             shape = next(iter(body.shapes))
 
-            a = body.position + shape.a
-            b = body.position + shape.b
+            a = body.position + shape.a.rotated(body.angle)
+            b = body.position + shape.b.rotated(body.angle)
+
+
             item.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
 
         else:
@@ -226,7 +231,7 @@ class MainWindow(QMainWindow):
             return
         spring = self.simulator.add_spring(
             b1, b2,
-            stiffness=200, damping=10,
+            stiffness=100, damping=6,
             anchor1=(0, 0), anchor2=(0, 0),
             rest_length=(b1.position - b2.position).length
         )
@@ -236,6 +241,7 @@ class MainWindow(QMainWindow):
         line.setPen(pen)
         self.scene.addItem(line)
         self.springs.append((spring, line))
+        self.update_spring_line_with_smoothing(spring,line,1)
         print("Spring created. Click Start to see it in action.")
 
     def quit_select(self):
@@ -257,9 +263,34 @@ class MainWindow(QMainWindow):
         self.spring_selection = []
         self.statusBar().showMessage("Select two objects to add a spring.")
 
+
+    def update_spring_line_with_smoothing(self, spring, line, base_alpha=0.3, max_alpha=1.0, speed_scale=500.0):
+        # 获取物理位置
+        a = spring.a.position + spring.anchor_a.rotated(spring.a.angle)
+        b = spring.b.position + spring.anchor_b.rotated(spring.b.angle)
+
+        # 当前绘制的位置（scene 坐标）
+        current_a = line.line().p1()
+        current_b = line.line().p2()
+
+        current_a = pymunk.Vec2d(current_a.x(), 600 - current_a.y())  # 注意转换坐标系
+        current_b = pymunk.Vec2d(current_b.x(), 600 - current_b.y())
+
+        # 根据两个端点的速度调整 alpha（用相对速度估计动态程度）
+        relative_velocity = (spring.a.velocity - spring.b.velocity).length
+        dynamic_alpha = min(base_alpha + (relative_velocity / speed_scale), max_alpha)
+
+        # 插值
+        smoothed_a = current_a * (1 - dynamic_alpha) + a * dynamic_alpha
+        smoothed_b = current_b * (1 - dynamic_alpha) + b * dynamic_alpha
+
+        # 设置线段
+        line.setLine(smoothed_a.x, 600 - smoothed_a.y, smoothed_b.x, 600 - smoothed_b.y)
+
+
     def update_scene(self):
-        for _ in range(3):  # 多步模拟提升平滑度
-            self.simulator.space.step(1 / 180.0)
+        for _ in range(10):  # 多步模拟提升平滑度
+            self.simulator.space.step(1 / 600.0)
 
         for entry in self.all_item:
             item = entry["item"]
@@ -271,12 +302,10 @@ class MainWindow(QMainWindow):
                 if len(self.plot_data) > 100:
                     self.plot_data = self.plot_data[-100:]
                 self.plot_curve.setData(self.plot_data)
-
-        for spring, line in self.springs:
-            a = spring.a.position + spring.anchor_a.rotated(spring.a.angle)
-            b = spring.b.position + spring.anchor_b.rotated(spring.b.angle)
-            line.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
-
+        self.spring_update_counter+=1
+        if self.spring_update_counter%2==0:
+            for spring, line in self.springs:
+                self.update_spring_line_with_smoothing(spring,line)
 
 def main():
     app = QApplication(sys.argv)
