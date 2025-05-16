@@ -9,6 +9,7 @@ class PhysicsSimulator:
         self.space=pymunk.Space()
         self.space.gravity=(0,981)#重力
         self.bodies=[]#全部物体
+        self.body_info=[]#对应物体的形状数据
         self.time_scale=1.0#用于控制时间流速
         self.data_handler=DataHandler()#统计数据
 
@@ -27,6 +28,12 @@ class PhysicsSimulator:
         shape=pymunk.Circle(body,out_radius)
         shape.elasticity=elasticity
         self.space.add(body,shape)
+        self.data_handler.register_object(
+            obj_id=len(self.bodies),  # 使用索引作为obj_id（需根据实际ID逻辑调整）
+            shape_type='circle',
+            radius=out_radius,
+            metadata={'inner_radius': inner_radius}
+        )
         self.bodies.append(body)
         return body
 
@@ -39,6 +46,12 @@ class PhysicsSimulator:
         shape=pymunk.Poly.create_box(body,(width,height))
         shape.elasticity=elasticity
         self.space.add(body,shape)
+        self.data_handler.register_object(
+            obj_id=len(self.bodies),
+            shape_type='rectangle',
+            width=width,
+            height=height
+        )
         self.bodies.append(body)
         return body
 
@@ -48,9 +61,16 @@ class PhysicsSimulator:
         moment=pymunk.moment_for_segment(mass,start,destination,radius)
         body=pymunk.Body(mass,moment)
         body.position=(start+destination)/2
-        shape=pymunk.Segment(body,start,destination,radius)
+        shape=pymunk.Segment(body,start,destination,radius=0.1)
         shape.elasticity=elasticity
         self.space.add(body,shape)
+        self.data_handler.register_object(
+            obj_id=len(self.bodies),
+            shape_type='rectangle',
+            start=start,
+            destination=destination,
+            radius=radius
+        )
         self.bodies.append(body)
         return body
 
