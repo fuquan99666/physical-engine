@@ -1,9 +1,11 @@
 import pymunk
 import sys
+import math
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
-    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter
+    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter,QMenu,
+    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QPointF
 from PyQt6.QtGui import QColor, QAction, QPen, QPainter
@@ -45,13 +47,230 @@ class MainWindow(QMainWindow):
             ("Reset", self.reset_simulation),
             ("Delete Selected", self.delete_selected_item),
             ("Quit Selected", self.quit_select),
-            ("Add Object", self.show_add_object_dialog),
             ("Add Spring", self.prepare_add_spring)
         ]
         for name, slot in actions:
             action = QAction(name, self)
             action.triggered.connect(slot)
             self.toolbar.addAction(action)
+
+        add_object_menu=QMenu("Add Object",self)
+        for obj_type in ["Circle","Box","Segment"]:
+            action=QAction(obj_type,self)
+            action.triggered.connect(lambda checked,t=obj_type:self.add_object_with_defaults(t))
+            add_object_menu.addAction(action)
+        
+        add_object_button=QAction("Add Qbject",self)
+        add_object_button.setMenu(add_object_menu)
+        self.toolbar.addAction(add_object_button)
+
+        edit_action=QAction("Edit Selected",self)
+        edit_action.triggered.connect(self.edit_selected_object)
+        self.toolbar.addAction(edit_action)
+
+    
+    def add_object_with_defaults(self,obj_type):
+        x,y=300,300
+        mass=30
+        is_static=False
+
+        if obj_type=="Circle":
+            radius=30
+            body,shape=self.simulator.add_circle(x,y,mass,radius)
+            item=QGraphicsEllipseItem(-radius,-radius,2*radius,2*radius)
+        elif obj_type=="Box":
+            width,height=60,60
+            body,shape=self.simulator.add_box(x,y,width,height,mass)
+            item=QGraphicsRectItem(-width/2,-height/2,width,height)
+        elif obj_type=="Segment":
+            start=pymunk.Vec2d(x,y)
+            end=pymunk.Vec2d(x+100,y)
+            body,shape=self.simulator.add_segment(start,end,mass,radius=5,static=is_static)
+            item=QGraphicsLineItem()
+        else:
+            return 
+        self._configure_item(item,body,shape,is_static)
+        self.all_item.append({"item":item,"body":body,"shape":shape})
+        self.scene.addItem(item)
+        self.update_graphics_position(item,body,shape,force=True)
+
+    def edit_selected_object(self):
+        if not self.selected_item_data:
+            return 
+
+        body = self.selected_item_data["body"]
+        shape = self.selected_item_data["shape"]
+        item = self.selected_item_data["item"]
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Object")
+        layout = QFormLayout(dialog)
+
+        # ---- 基础属性 ----
+        pos_x = QLineEdit(str(body.position.x))
+        pos_y = QLineEdit(str(body.position.y))
+        vel_x = QLineEdit(str(body.velocity.x))
+        vel_y = QLineEdit(str(body.velocity.y))
+        mass = QLineEdit(str(body.mass) if body.mass != float("inf") else "0")
+
+        is_static_checkbox = QCheckBox()
+        is_static_checkbox.setChecked(body.body_type == pymunk.Body.STATIC)
+
+        current_color = self.selected_item_data.get("color", "#00ff00")
+        color = QColor(current_color)
+        color_button = QPushButton()
+        color_button.setStyleSheet(f"background-color: {color.name()}")
+
+        def choose_color():
+            nonlocal color
+            new_color = QColorDialog.getColor(color, self)
+            if new_color.isValid():
+                color = new_color
+                color_button.setStyleSheet(f"background-color: {color.name()}")
+
+        color_button.clicked.connect(choose_color)
+
+        # ---- 添加控件 ----
+        layout.addRow("Position X:", pos_x)
+        layout.addRow("Position Y:", pos_y)
+        layout.addRow("Velocity X:", vel_x)
+        layout.addRow("Velocity Y:", vel_y)
+        layout.addRow("Mass:", mass)
+        layout.addRow("Is Static:", is_static_checkbox)
+        layout.addRow("Color:", color_button)
+
+        # ---- 形状参数 ----
+        shape_type = type(shape)
+        radius_input = None
+        width_input = None
+        height_input = None
+
+        if isinstance(shape, pymunk.Circle):
+            radius_input = QLineEdit(str(shape.radius))
+            layout.addRow("Radius:", radius_input)
+        elif isinstance(shape, pymunk.Poly):
+            # 只支持矩形（4点）识别宽高
+            vertices = shape.get_vertices()
+            if len(vertices) == 4:
+                global_vertices = [body.local_to_world(v) for v in shape.get_vertices()]
+
+                # 按顺序取出前两个顶点，计算宽高方向向量
+                v0, v1, v2, v3 = global_vertices
+
+                width_vector = v1 - v0
+                height_vector = v2 - v1
+
+
+                width = width_vector.length
+                height = height_vector.length
+
+                #angle = width_vector.angle 
+                width_input = QLineEdit(str(width))
+                height_input = QLineEdit(str(height))
+                layout.addRow("Width:", width_input)
+                layout.addRow("Height:", height_input)
+        elif isinstance(shape,pymunk.Segment):
+            # 获取当前长度和角度
+            vec = shape.b - shape.a#没毛病
+            current_length = vec.length
+            current_angle_deg = math.degrees(body.angle)
+
+            length_input = QLineEdit(str(current_length))
+            angle_input = QLineEdit(str(current_angle_deg))
+            layout.addRow("Length:", length_input)
+            layout.addRow("Angle (°):", angle_input)
+
+        # ---- 确认/取消按钮 ----
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        # ---- 用户确认 ----
+        if dialog.exec():
+            try:
+                x = float(pos_x.text())
+                y = float(pos_y.text())
+                vx = float(vel_x.text())
+                vy = float(vel_y.text())
+                m = float(mass.text())
+
+                body.position = x, y
+                body.velocity = vx, vy
+
+                if is_static_checkbox.isChecked():
+                    body.body_type = pymunk.Body.STATIC
+                    #body.mass = float("inf")
+                else:
+                    body.body_type = pymunk.Body.DYNAMIC
+                    body.mass = m
+
+                is_static=is_static_checkbox.isChecked()
+
+                # 更新颜色
+                if isinstance(item, QGraphicsLineItem):
+                    pen = item.pen()
+                    pen.setColor(color)
+                    item.setPen(pen)
+                else:
+                    item.setBrush(color)
+                self.selected_item_data["color"] = color.name()
+
+                # 更新形状（仅支持简单调整）
+                if isinstance(shape, pymunk.Circle) and radius_input:
+                    new_radius = float(radius_input.text())
+                    shape.unsafe_set_radius(new_radius)
+
+                    item.setRect(-new_radius,-new_radius,2*new_radius,2*new_radius)
+                    
+
+                elif isinstance(shape, pymunk.Poly):
+                    new_width = float(width_input.text())
+                    new_height = float(height_input.text())
+                    if(not is_static):
+                        body.moment=pymunk.moment_for_box(m,(new_width,new_height))
+
+                    new_shape=pymunk.Poly.create_box(body,(new_width,new_height))
+                    new_shape.elasticity=shape.elasticity
+                    self.simulator.space.remove(shape)
+                    self.simulator.space.add(new_shape)
+                    self.selected_item_data["shape"]=new_shape
+
+                    item.setRect(-new_width/2,-new_height/2,new_width,new_height)
+
+                elif isinstance(shape, pymunk.Segment) and length_input and angle_input:
+                    new_length = float(length_input.text())
+                    new_angle_deg = float(angle_input.text())
+                    new_angle_rad = math.radians(new_angle_deg)
+
+                    direction = pymunk.Vec2d(1, 0)
+                    half_vec = direction * (new_length / 2)
+                    new_a = -half_vec
+                    new_b = half_vec
+
+                    new_shape = pymunk.Segment(body, new_a, new_b, shape.radius)
+                    new_shape.elasticity = shape.elasticity
+
+                    self.simulator.space.remove(shape)
+                    self.simulator.space.add(new_shape)
+                    self.selected_item_data["shape"] = new_shape
+
+                    # 更新 body 角度
+                    body.angle = new_angle_rad
+                    shape=new_shape
+
+                    item.setLine(new_shape.a.x, new_shape.a.y, new_shape.b.x, new_shape.b.y)
+                item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
+
+
+                if not is_static:
+                    item.mouseMoveEvent = lambda e, b=item, bd=body,s=shape: self.drag_item(b, bd,s, e)
+                else:
+                    item.mouseMoveEvent= lambda e,b=item,bd=body,s=shape: None
+                self.update_graphics_position(item, body,shape, force=True)
+
+            except ValueError:
+                print("Invalid input.")
+
 
     def _init_ui(self):
         central_widget = QWidget()
@@ -133,43 +352,14 @@ class MainWindow(QMainWindow):
         self.simulator.space.gravity = (0, -value)
         self.gravity_label.setText(f"Gravity: {value}")
 
-    def show_add_object_dialog(self):
-        dialog = AddObjectDialog()
-        if not dialog.exec():
-            return
 
-        values = dialog.get_values()
-        obj_type = values["type"]
-        x, y = values["x"], values["y"]
-        mass = values["mass"]
-        a = values["r_or_w"]
-        b = values["h_or_r2"]
-        is_static = values.get("static", False)
 
-        if obj_type == "Circle":
-            body = self.simulator.add_circle(x, y, mass, a)
-            item = QGraphicsEllipseItem(-a, -a, 2*a, 2*a)
-        elif obj_type == "Box":
-            body = self.simulator.add_box(x, y, b, a, mass)
-            item = QGraphicsRectItem(-a/2, -b/2, a, b)
-        elif obj_type == "Segment":
-            start = pymunk.Vec2d(x, y)
-            end = pymunk.Vec2d(x + a, y + b)
-            body = self.simulator.add_segment(start, end, mass, radius=5, static=is_static)
-            item = QGraphicsLineItem()
-        else:
-            return
 
-        self._configure_item(item, body, is_static)
-        self.all_item.append({"item": item, "body": body})
-        self.scene.addItem(item)
-        self.update_graphics_position(item, body, force=True)
-
-    def _configure_item(self, item, body, is_static):
+    def _configure_item(self, item, body,shape, is_static):
         if hasattr(item, 'setBrush'):
             item.setBrush(QColor("green"))
         if isinstance(item, QGraphicsLineItem):
-            shape = next(iter(body.shapes))
+
             pen = QPen(QColor("green"))
             pen.setWidthF(shape.radius * 2)
             item.setPen(pen)
@@ -177,21 +367,31 @@ class MainWindow(QMainWindow):
         item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
         item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, True)
         item.setAcceptHoverEvents(True)
-        item.mousePressEvent = lambda e, b=item: self.select_item(b)
-        if not is_static:
-            item.mouseMoveEvent = lambda e, b=item, bd=body: self.drag_item(b, bd, e)
 
-    def drag_item(self, item, body, event):
+
+        def on_mouse_press(e, b=item):
+            if e.button() == Qt.MouseButton.RightButton:
+                self.select_item(b)
+                self.edit_selected_object()  # 弹出属性编辑窗口
+            elif e.button() == Qt.MouseButton.LeftButton:
+                self.select_item(b)
+
+        item.mousePressEvent = on_mouse_press
+
+        if not is_static:
+            item.mouseMoveEvent = lambda e, b=item, bd=body,s=shape: self.drag_item(b, bd,s, e)
+
+    def drag_item(self, item, body,shape, event):
         pos = event.scenePos()
         body.position = (pos.x(), 600 - pos.y())
         body.velocity = (0, 0)  # 停止速度防止跳动
-        self.update_graphics_position(item, body, force=True)
+        self.update_graphics_position(item, body,shape, force=True)
         for spring,line in self.springs:
             if spring.a is body or spring.b is body:
                 self.update_spring_line_with_smoothing(spring,line,1)
-    def update_graphics_position(self, item, body, force=False):
+    def update_graphics_position(self, item, body,shape, force=False):
         if isinstance(item, QGraphicsLineItem):
-            shape = next(iter(body.shapes))
+          
 
             a = body.position + shape.a.rotated(body.angle)
             b = body.position + shape.b.rotated(body.angle)
@@ -199,7 +399,7 @@ class MainWindow(QMainWindow):
 
             item.setLine(a.x, 600 - a.y, b.x, 600 - b.y)
 
-        else:
+        elif isinstance(item,QGraphicsEllipseItem):
             x, y = body.position.x, 600 - body.position.y
             target_pos = QPointF(x, y)
             if force or not hasattr(item, 'last_pos'):
@@ -210,6 +410,19 @@ class MainWindow(QMainWindow):
                 smoothed = current_pos * 0.7 + target_pos * 0.3  #这个是平缓插值
                 item.setPos(smoothed)
                 item.last_pos = smoothed
+        elif isinstance(item,QGraphicsRectItem):
+            x, y = body.position.x, 600 - body.position.y
+            target_pos = QPointF(x, y)
+
+            if force or not hasattr(item, 'last_pos'):
+                item.setPos(target_pos)
+                item.last_pos = target_pos
+            else:
+                current_pos = item.last_pos
+                smoothed = current_pos * 0.7 + target_pos * 0.3
+                item.setPos(smoothed)
+                item.last_pos = smoothed
+                item.setRotation(-math.degrees(body.angle))  
 
     def select_item(self, item):
         for entry in self.all_item:
@@ -252,8 +465,9 @@ class MainWindow(QMainWindow):
             return
         item = self.selected_item_data["item"]
         body = self.selected_item_data["body"]
+        shape=self.selected_item_data["shape"]
         self.scene.removeItem(item)
-        self.simulator.space.remove(body, *body.shapes)
+        self.simulator.space.remove(body,shape)
         self.all_item.remove(self.selected_item_data)
         self.selected_item_data = None
         self.plot_data.clear()
@@ -295,7 +509,8 @@ class MainWindow(QMainWindow):
         for entry in self.all_item:
             item = entry["item"]
             body = entry["body"]
-            self.update_graphics_position(item, body)
+            shape=entry["shape"]
+            self.update_graphics_position(item, body,shape)
 
             if self.selected_item_data and self.selected_item_data["item"] == item:
                 self.plot_data.append(body.position.y)

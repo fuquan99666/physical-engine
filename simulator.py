@@ -28,9 +28,9 @@ class PhysicsSimulator:
         shape.elasticity=elasticity
         self.space.add(body,shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
-    def add_box(self,p_x,p_y,height,width,mass,elasticity=0.5):
+    def add_box(self,p_x,p_y,width,height,mass,elasticity=0.5):
 
         #添加矩形物体(x,y,高度，宽度，质量，伸缩系数)
         moment=pymunk.moment_for_box(mass,(width,height))
@@ -40,7 +40,7 @@ class PhysicsSimulator:
         shape.elasticity=elasticity
         self.space.add(body,shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
     def add_segment(self,start,destination,mass,radius=0.1,elasticity=0.5,static=False):
         if static:
@@ -56,7 +56,7 @@ class PhysicsSimulator:
         shape.elasticity=elasticity
         self.space.add(body,shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
     def add_spring(self,body1,body2,stiffness,damping,anchor1=(0,0),anchor2=(0,0),rest_length=100):
 
