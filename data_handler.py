@@ -2,38 +2,131 @@ import pandas as pd
 from datetime import datetime
 from pymunk import Body
 #from simulator import PhysicsSimulator
-
-class DataHandler:
+import sqlite3
+import os
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton,QFileDialog
+from PyQt6.QtCore import QObject, pyqtSignal
+import json
+class DataHandler():
     def __init__(self):
         self.buffer=[]
+        self.restored_bodies=[]
         self.last_save_time=datetime.now().timestamp()
         self.current_sim_time=0.0#总时间
-
+        self.current_file=None
     def update_sim_time(self,dt):
         self.current_sim_time+=dt
+    def register_object(self, obj_id, shape_type, **properties):
+        """注册物体属性到数据库"""
+        try:
+            # 将属性转换为字典，处理JSON字段
+            prop_data = {
+                'obj_id': obj_id,
+                'shape_type': shape_type,
+                'mass':properties.get('mass'),
+                'radius': properties.get('radius'),
+                'width': properties.get('width'),
+                'height': properties.get('height'),
+                'start':properties.get('start'),
+                'destination':properties.get("destination"),
+                'vertices': json.dumps(properties.get('vertices', [])),
+                'metadata': json.dumps(properties.get('metadata', {}))
+            }
 
+            # 插入或更新属性表
+            with self.conn:
+                cursor = self.conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO object_properties 
+                    VALUES (:obj_id, :shape_type, :radius, :width, 
+                            :height,:start,:destination, :vertices, :metadata)
+                ''', prop_data)
+        except Exception as e:
+            print(f"属性注册失败: {str(e)}")
     def collect_data(self,bodies,current_time):
         """收集数据，在确认数据类型后再确定形式"""
         for index,body in enumerate(bodies):
             new_row={
-                "index":index,
+                "idx":index,
                 "timestamp": current_time,
                 "x": body.position.x,
                 "y": body.position.y,
                 "vx": body.velocity.x,
                 "vy": body.velocity.y,
             }
-            self.databuffer.append(new_row)
-
-
+            self.buffer.append(new_row)
     def reset(self):
         '''清空数据重新开始'''
         self.buffer.clear()
-
-
         self.current_sim_time=0.0
+    
+    
+    def save_to_sqlite(self, filepath):
+        try:
+            #检测文件是否存在，如果在就删除旧文件
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            conn = sqlite3.connect(filepath)       # 连接到数据库
+            cursor = conn.cursor()                 # 创建游标对象
+            # 创建表（如果不存在）
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS body_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    idx INTEGER,
+                    timestamp REAL,
+                    x REAL,
+                    y REAL,
+                    vx REAL,
+                    vy REAL
+                )
+            ''')
+            #创建另一张存储物体属性的表
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS object_properties
+                      (obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
+                       shape_type TEXT CHECK(shape_type IN ('circle', 'rectangle', 'polygon','segment','spring')),
+                       radius REAL,                 -- 圆形专用
+                       width REAL,                  -- 矩形/多边形专用
+                       height REAL,
+                       vertices TEXT,               -- 多边形顶点坐标 JSON存储
+                       metadata TEXT)               -- 其他扩展属性 JSON
+                   ''')
+            # 准备批量插入的数据
+            data_to_insert = [
+                (row["idx"], row["timestamp"], row["x"], row["y"], row["vx"], row["vy"])
+                for row in self.databuffer
+            ]
+            
+            # 执行批量插入
+            cursor.executemany('''
+                INSERT INTO body_data (idx, timestamp, x, y, vx, vy)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', data_to_insert)
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            conn.commit()  # 提交事务
+            conn.close()   # 关闭连接
+        except Exception as e:
+            error_msg = f"保存失败: {str(e)}"
+            #self._show_error_dialog(error_msg)
 
-
+    """另存为（选择新路径保存）"""
+    def save_as(self):
+        # 使用 PyQt 文件对话框
+        filepath, _ = QFileDialog.getSaveFileName(
+            None,  # 父窗口（可选）
+            "另存为",  # 对话框标题
+            "./dataset",  # 初始目录
+            "SQLite Database (*.db);;All Files (*)"  # 文件过滤器
+        )
+        #用户取消操作时，filepath会返回""
+        if not filepath:
+            return
+        self.save_to_sqlite(filepath)
+        self.current_file = filepath
+    def save(self):
+        if self.current_file:
+            self.save_to_sqlite(self.current_file)
+        else:
+            self.save_as()
 class DataCalculator:
     @staticmethod
     def kinetic_energy(body:Body):

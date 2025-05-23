@@ -5,15 +5,14 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter,QMenu,
-    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog
+    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog,QInputDialog, QTreeView
 )
-from PyQt6.QtCore import Qt, QTimer, QPointF
-from PyQt6.QtGui import QColor, QAction, QPen, QPainter
+from PyQt6.QtCore import Qt, QTimer, QPointF,QDir
+from PyQt6.QtGui import QColor, QAction, QPen, QPainter, QFileSystemModel
 import pyqtgraph as pg
-
+import os
 from add_object_dialog import AddObjectDialog
 from simulator import PhysicsSimulator as ph
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -26,10 +25,10 @@ class MainWindow(QMainWindow):
         self.simulator.space.gravity = (0, -self.gravity)
         self.simulator.space.collision_slop = 0.01
         self.spring_update_counter=0
-
+        self.init_menubar()
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
-
+        #self.init_file_browser()
         self._init_toolbar()
         self._init_ui()
 
@@ -41,13 +40,56 @@ class MainWindow(QMainWindow):
         self.spring_selection = None
         self.springs = []
 
+    # def init_file_browser(self):
+    #     """初始化文件浏览器侧边栏"""
+    #     # 创建文件系统模型
+    #     self.model = QFileSystemModel()
+    #     self.model.setRootPath(QDir.currentPath())  # 设置初始目录
+        
+    #     # 创建树形视图
+    #     self.tree_view = QTreeView()
+    #     self.tree_view.setModel(self.model)
+    #     self.tree_view.setRootIndex(self.model.index(QDir.currentPath()))
+    #     self.tree_view.doubleClicked.connect(self.open_file)
+        
+    #     # 设置列宽和显示选项
+    #     self.tree_view.setColumnWidth(0, 300)  # 名称列宽度
+    #     self.tree_view.setHeaderHidden(False)   # 显示表头
+    def init_menubar(self):
+         # 创建菜单栏
+        menu_bar = self.menuBar()
+        
+        # 创建文件菜单
+        file_menu = menu_bar.addMenu("文件(&F)")
+        
+        # 添加菜单项
+        new_action = QAction("新建(&N)", self)
+        new_action.triggered.connect(self.new_file)
+        file_menu.addAction(new_action)
+
+        file_menu.addSeparator()
+
+        save_action=QAction("保存(&S)...",self)
+        save_action.triggered.connect(self.save)
+        file_menu.addAction(save_action)
+
+        save_as_action=QAction("另存为",self)
+        save_as_action.triggered.connect(self.save_as)
+        file_menu.addAction(save_as_action)
+        # 添加分隔线
+        file_menu.addSeparator()
+        
+        exit_action = QAction("退出(&X)", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
     def _init_toolbar(self):
         actions = [
             ("Start/Pause", self.toggle_simulation),
             ("Reset", self.reset_simulation),
             ("Delete Selected", self.delete_selected_item),
             ("Quit Selected", self.quit_select),
-            ("Add Spring", self.prepare_add_spring)
+            ("Add Spring", self.prepare_add_spring),
+            
         ]
         for name, slot in actions:
             action = QAction(name, self)
@@ -60,7 +102,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked,t=obj_type:self.add_object_with_defaults(t))
             add_object_menu.addAction(action)
         
-        add_object_button=QAction("Add Qbject",self)
+        add_object_button=QAction("Add Object",self)
         add_object_button.setMenu(add_object_menu)
         self.toolbar.addAction(add_object_button)
 
@@ -68,7 +110,39 @@ class MainWindow(QMainWindow):
         edit_action.triggered.connect(self.edit_selected_object)
         self.toolbar.addAction(edit_action)
 
-    
+    def new_file(self):
+         # 弹出输入对话框
+        text, ok = QInputDialog.getText(
+            self,                    # 父窗口
+            "新建文件",              # 对话框标题
+            "请输入文件名:",         # 提示文字
+        )
+        
+        # 处理用户输入
+        if ok and text:  # 用户点击了OK且输入不为空
+            print(f"正在创建文件: {text}")
+            self.simulator.data_handler.current_file=text
+            print("成功创建文件")
+        else:  # 用户点击了Cancel
+            print("取消创建文件")
+            self.statusBar().showMessage("取消创建文件", 3000)
+
+    def open_file(self,index):
+        path = self.model.filePath(index)
+        if os.path.isfile(path):
+            try:
+                # 这里可以添加实际的文件打开逻辑
+                self.statusBar().showMessage(f"已打开文件: {path}", 3000)
+                print(f"打开文件: {path}")
+                
+                # 示例：读取文本文件内容
+                # with open(path, 'r') as f:
+                #     print(f.read())
+                
+            except Exception as e:
+                self.statusBar().showMessage(f"打开失败: {str(e)}", 5000)
+        else:
+            self.statusBar().showMessage(f"已展开目录: {path}", 2000)
     def add_object_with_defaults(self,obj_type):
         x,y=300,300
         mass=30
@@ -346,6 +420,7 @@ class MainWindow(QMainWindow):
         self.running = False
         self.timer.stop()
         self.time = 0
+        
 
     def update_gravity(self, value):
         self.gravity = value
@@ -500,7 +575,16 @@ class MainWindow(QMainWindow):
 
         # 设置线段
         line.setLine(smoothed_a.x, 600 - smoothed_a.y, smoothed_b.x, 600 - smoothed_b.y)
-
+    def save(self):
+        try:
+            self.simulator.data_handler.save()
+        except Exception as e:
+            print(e)
+    def save_as(self):
+        try:
+            self.simulator.data_handler.save_as()
+        except Exception as e:
+            print(e)
 
     def update_scene(self):
         for _ in range(10):  # 多步模拟提升平滑度
