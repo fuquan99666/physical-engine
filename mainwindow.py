@@ -254,9 +254,8 @@ class MainWindow(QMainWindow):
                     self.simulator.space.add(new_shape)
                     self.selected_item_data["shape"] = new_shape
 
-                    # 更新 body 角度
-                    body.angle = new_angle_rad
                     shape=new_shape
+                    body.angle=new_angle_rad
 
                     item.setLine(new_shape.a.x, new_shape.a.y, new_shape.b.x, new_shape.b.y)
                 item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
@@ -449,10 +448,13 @@ class MainWindow(QMainWindow):
             rest_length=(b1.position - b2.position).length
         )
         line = QGraphicsLineItem()
+
         pen = QPen(QColor("red"))
         pen.setWidth(5)
         line.setPen(pen)
+
         self.scene.addItem(line)
+
         self.springs.append((spring, line))
         self.update_spring_line_with_smoothing(spring,line,1)
         print("Spring created. Click Start to see it in action.")
@@ -466,12 +468,19 @@ class MainWindow(QMainWindow):
         item = self.selected_item_data["item"]
         body = self.selected_item_data["body"]
         shape=self.selected_item_data["shape"]
+        for spring,line in self.springs:
+            if spring.a is body or spring.b is body:
+                self.scene.removeItem(line)
+                self.simulator.space.remove(spring)
+                self.springs.remove((spring,line))#从弹簧组中移除
         self.scene.removeItem(item)
         self.simulator.space.remove(body,shape)
         self.all_item.remove(self.selected_item_data)
         self.selected_item_data = None
         self.plot_data.clear()
         self.plot_curve.setData([])
+
+
 
     def prepare_add_spring(self):
         self.spring_selection = []

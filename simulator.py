@@ -48,12 +48,13 @@ class PhysicsSimulator:
         else:
 
         #添加线段（类似于杆）(起点，终点，质量，半径（就是碰撞的宽度，缺省0.1），伸缩系数）
-            moment=pymunk.moment_for_segment(mass,start,destination,radius)
+            moment=pymunk.moment_for_segment(mass,start,destination,radius)*0.01
             body=pymunk.Body(mass,moment)
         body.position=(start+destination)/2
         
         shape=pymunk.Segment(body,start-body.position,destination-body.position,radius)
         shape.elasticity=elasticity
+        shape.friction=0.8
         self.space.add(body,shape)
         self.bodies.append(body)
         return body,shape
