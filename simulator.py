@@ -17,7 +17,10 @@ class PhysicsSimulator:
 
     def set_gravity(self, gx, gy):
         self.space.gravity = (gx, gy)
-
+    def init_datahandler(self):
+        if self.data_handler.current_file==None:
+            self.data_handler.create_initial_file()
+        
     def add_circle(self, p_x, p_y, mass, out_radius, elasticity=0.5, inner_radius=0):
 
         # 添加圆形物体(x,y,质量，外半径，伸缩系数，内半径（缺省为零）)
@@ -29,6 +32,7 @@ class PhysicsSimulator:
         self.space.add(body, shape)
         self.bodies.append(body)
         self.create_index+=1
+        self.init_datahandler()
         self.data_handler.register_object(self.create_index,"circle",mass=mass,radius=out_radius)
         return body,shape
 
@@ -43,7 +47,8 @@ class PhysicsSimulator:
         self.space.add(body, shape)
         self.bodies.append(body)
         self.create_index+=1
-        self.data_handler.register_object(self.create_index,'poly',mass=mass,width=width,height=height)
+        self.init_datahandler()
+        self.data_handler.register_object(self.create_index,'polygon',mass=mass,width=width,height=height)
         return body,shape
 
     def add_segment(self, start, destination, mass, radius=0.1, elasticity=0.5, static=False):
@@ -65,7 +70,8 @@ class PhysicsSimulator:
         self.space.add(body, shape)
         self.bodies.append(body)
         self.create_index+=1
-
+        self.init_datahandler()
+        self.data_handler.register_object(self.create_index,'segment',start=start,destination=destination,radius=radius)
         return body,shape
 
     def add_spring(self, body1, body2, stiffness, damping, anchor1=(0, 0), anchor2=(0, 0), rest_length=100):
@@ -81,6 +87,7 @@ class PhysicsSimulator:
             damping)
         self.space.add(spring)
         self.create_index+=1
+        self.init_datahandler()
         return spring
 
     def add_polygon(self, p_x, p_y, vertices, mass, elasticity=0.5):
@@ -100,6 +107,7 @@ class PhysicsSimulator:
         self.space.add(body, shape)
         self.bodies.append(body)
         self.create_index+=1
+        self.init_datahandler()
         return body,shape
     
     
@@ -122,6 +130,7 @@ class PhysicsSimulator:
         )
         self.space.add(joint)
         self.create_index+=1
+        self.init_datahandler()
         return joint
 
     def add_slide_joint(self, body_a, body_b, anchor_a, anchor_b, min_length, max_length):
@@ -140,6 +149,7 @@ class PhysicsSimulator:
         )
         self.space.add(joint)
         self.create_index+=1
+        self.init_datahandler()
         return joint
     
     
@@ -152,6 +162,7 @@ class PhysicsSimulator:
         joint = pymunk.GearJoint(body_a, body_b, phase, ratio)
         self.space.add(joint)
         self.create_index+=1
+        self.init_datahandler()
         return joint
     
     

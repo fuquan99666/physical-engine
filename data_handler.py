@@ -15,7 +15,6 @@ class DataHandler(QMainWindow):
         self.last_save_time=datetime.now().timestamp()
         self.current_sim_time=0.0#总时间
         self.current_file=None
-        self.create_initial_file()
     def create_initial_file(self):
         text, ok = QInputDialog.getText(
             self,                    # 父窗口
@@ -40,17 +39,33 @@ class DataHandler(QMainWindow):
                     vy REAL
                 )
             ''')
-            cursor.execute('''CREATE TABLE IF NOT EXISTS object_properties
-                    (obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
-                    shape_type TEXT CHECK(shape_type IN ('circle', 'rectangle', 'polygon','segment','spring')),
-                    radius REAL,                 -- 圆形专用
-                    width REAL,                  -- 矩形/多边形专用
-                    height REAL,
-                    start REAL,
-                    destination REAL,
-                    vertices TEXT,               -- 多边形顶点坐标 JSON存储
-                    metadata TEXT)               -- 其他扩展属性 JSON
-                ''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS circle_properties(
+                           obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
+                           shape_type TEXT,
+                           mass REAL,
+                           radius REAL
+                           )
+                           ''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS polygon_properties(
+                        obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
+                        shape_type TEXT,
+                        mass REAL,
+                        width REAL,                  
+                        height REAL
+                        )
+                            ''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS segment_properties(
+                    obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
+                    shape_type TEXT,
+                    mass REAL,
+                    radius REAL,
+                    start_x REAL,                  -- 线段的起点
+                    start_y REAL,     
+                    destination_x REAL,            -- 线段的终点
+                    destination_y REAL,
+                    elasticity REAL)
+                    
+                    ''')
             conn.commit()
             conn.close()
         else:  # 用户点击了Cancel
@@ -63,27 +78,46 @@ class DataHandler(QMainWindow):
         try:
             conn = sqlite3.connect(f'./dataset/{self.current_file}.db')       # 连接到数据库
             cursor = conn.cursor() # 创建游标对象
-            
-            # 将属性转换为字典，处理JSON字段
-            prop_data = {
-                'obj_id': obj_id,
-                'shape_type': shape_type,
-                'mass':properties['mass'],
-                'radius': properties.get('radius'),
-                'width': properties.get('width'),
-                'height': properties.get('height'),
-                'start':properties.get('start'),
-                'destination':properties.get("destination"),
-                'vertices': json.dumps(properties.get('vertices', [])),
-                'metadata': json.dumps(properties.get('metadata', {}))
-            }
-
-            # 插入或更新属性表
-            cursor.execute('''
-                INSERT INTO object_properties 
-                VALUES (:obj_id, :shape_type, :radius, :width, 
-                            :height,:start,:destination, :vertices, :metadata)
-            ''', prop_data)
+            type=shape_type
+            if type=='circle':
+                prop_data={
+                    'obj_id': obj_id,
+                    'shape_type': shape_type,
+                    'mass':properties.get("mass"),
+                    'radius': properties.get('radius'),
+                }
+                cursor.execute('''
+                    INSERT INTO circle_properties 
+                    VALUES(:obj_id, :shape_type, :mass, :radius)
+                ''',prop_data)
+            elif type=='polygon':
+                prop_data={
+                    'obj_id': obj_id,
+                    'shape_type': shape_type,
+                    'mass':properties.get("mass"),
+                    'width': properties.get('width'),
+                    'height': properties.get('height'),
+                }
+                cursor.execute('''
+                    INSERT INTO polygon_properties 
+                    VALUES(:obj_id, :shape_type, :mass, :width, :height)
+                ''',prop_data)
+            elif type=='segment':
+                prop_data={
+                    'obj_id': obj_id,
+                    'shape_type': shape_type,
+                    'mass':properties.get("mass"),
+                    'radius': properties.get('radius'),
+                    'start_x':properties.get('start').x,
+                    'start_y':properties.get('start').y,
+                    'destination_x':properties.get('destination').x,
+                    'destination_y':properties.get("destination").y,
+                    'elasticity' :properties.get("elasticity"),
+                }
+                cursor.execute('''
+                    INSERT INTO segment_properties 
+                    VALUES(:obj_id, :shape_type, :mass, :radius,:start_x,:start_y,:destination_x,:destination_y,:elasticity)
+                ''',prop_data)
             conn.commit()
             conn.close()
         except Exception as e:
@@ -107,40 +141,15 @@ class DataHandler(QMainWindow):
     
     
     def save_to_sqlite(self, filepath):
+        filepath=f'./dataset/{filepath}.db'
         try:
-            #检测文件是否存在，如果在就删除旧文件
-            if os.path.exists(filepath):
-                os.remove(filepath)
             conn = sqlite3.connect(filepath)       # 连接到数据库
             cursor = conn.cursor()                 # 创建游标对象
-            # 创建表（如果不存在）
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS body_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    idx INTEGER,
-                    timestamp REAL,
-                    x REAL,
-                    y REAL,
-                    vx REAL,
-                    vy REAL
-                )
-            ''')
-            #创建另一张存储物体属性的表
-            cursor.execute('''CREATE TABLE IF NOT EXISTS object_properties
-                      (obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
-                       shape_type TEXT CHECK(shape_type IN ('circle', 'rectangle', 'polygon','segment','spring')),
-                       radius REAL,                 -- 圆形专用
-                       width REAL,                  -- 矩形/多边形专用
-                       height REAL,
-                       vertices TEXT,               -- 多边形顶点坐标 JSON存储
-                       metadata TEXT)               -- 其他扩展属性 JSON
-                   ''')
-            # 准备批量插入的数据
             data_to_insert = [
                 (row["idx"], row["timestamp"], row["x"], row["y"], row["vx"], row["vy"])
                 for row in self.buffer
             ]
-            
+            #目前为止一个很重要的问题：data_to_insert在调试时为空列表
             # 执行批量插入
             cursor.executemany('''
                 INSERT INTO body_data (idx, timestamp, x, y, vx, vy)

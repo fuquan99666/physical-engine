@@ -61,7 +61,6 @@ class MainWindow(QMainWindow):
         
         # 创建文件菜单
         file_menu = menu_bar.addMenu("文件(&F)")
-        
         # 添加菜单项
         new_action = QAction("新建(&N)", self)
         new_action.triggered.connect(self.new_file)
@@ -82,30 +81,30 @@ class MainWindow(QMainWindow):
         exit_action = QAction("退出(&X)", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+        #将添加物品的代码向上移动
+        #添加圆，矩形和线段
+        create_menu=menu_bar.addMenu("添加(&A)")
+        for obj_type in ["Circle","Box","Segment"]:
+            action=QAction(obj_type,self)
+            action.triggered.connect(lambda checked,t=obj_type:self.add_object_with_defaults(t))
+            create_menu.addAction(action)
+        #添加弹簧
+        create_spring=QAction("spring",self)
+        create_spring.triggered.connect(self.prepare_add_spring)
+        create_menu.addAction(create_spring)
     def _init_toolbar(self):
         actions = [
             ("Start/Pause", self.toggle_simulation),
             ("Reset", self.reset_simulation),
             ("Delete Selected", self.delete_selected_item),
             ("Quit Selected", self.quit_select),
-            ("Add Spring", self.prepare_add_spring),
             
         ]
         for name, slot in actions:
             action = QAction(name, self)
             action.triggered.connect(slot)
             self.toolbar.addAction(action)
-
-        add_object_menu=QMenu("Add Object",self)
-        for obj_type in ["Circle","Box","Segment"]:
-            action=QAction(obj_type,self)
-            action.triggered.connect(lambda checked,t=obj_type:self.add_object_with_defaults(t))
-            add_object_menu.addAction(action)
         
-        add_object_button=QAction("Add Object",self)
-        add_object_button.setMenu(add_object_menu)
-        self.toolbar.addAction(add_object_button)
-
         edit_action=QAction("Edit Selected",self)
         edit_action.triggered.connect(self.edit_selected_object)
         self.toolbar.addAction(edit_action)
