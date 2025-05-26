@@ -4,26 +4,71 @@ from pymunk import Body
 #from simulator import PhysicsSimulator
 import sqlite3
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton,QFileDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton,QFileDialog,QInputDialog
 from PyQt6.QtCore import QObject, pyqtSignal
 import json
-class DataHandler():
+class DataHandler(QMainWindow):
     def __init__(self):
+        super().__init__()
         self.buffer=[]
         self.restored_bodies=[]
         self.last_save_time=datetime.now().timestamp()
         self.current_sim_time=0.0#总时间
         self.current_file=None
+        self.create_initial_file()
+    def create_initial_file(self):
+        text, ok = QInputDialog.getText(
+            self,                    # 父窗口
+            "新建文件",              # 对话框标题
+            "请输入文件名:",         # 提示文字
+        )
+        # 处理用户输入
+        if ok and text:  # 用户点击了OK且输入不为空
+            print(f"正在创建文件: {text}")
+            self.current_file=text
+            print("成功创建文件")
+            conn=sqlite3.connect(f'./dataset/{self.current_file}.db')
+            cursor=conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS body_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    idx INTEGER,
+                    timestamp REAL,
+                    x REAL,
+                    y REAL,
+                    vx REAL,
+                    vy REAL
+                )
+            ''')
+            cursor.execute('''CREATE TABLE IF NOT EXISTS object_properties
+                    (obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
+                    shape_type TEXT CHECK(shape_type IN ('circle', 'rectangle', 'polygon','segment','spring')),
+                    radius REAL,                 -- 圆形专用
+                    width REAL,                  -- 矩形/多边形专用
+                    height REAL,
+                    start REAL,
+                    destination REAL,
+                    vertices TEXT,               -- 多边形顶点坐标 JSON存储
+                    metadata TEXT)               -- 其他扩展属性 JSON
+                ''')
+            conn.commit()
+            conn.close()
+        else:  # 用户点击了Cancel
+            print("取消创建文件")
+            self.statusBar().showMessage("取消创建文件", 3000)
     def update_sim_time(self,dt):
         self.current_sim_time+=dt
     def register_object(self, obj_id, shape_type, **properties):
         """注册物体属性到数据库"""
         try:
+            conn = sqlite3.connect(f'./dataset/{self.current_file}.db')       # 连接到数据库
+            cursor = conn.cursor() # 创建游标对象
+            
             # 将属性转换为字典，处理JSON字段
             prop_data = {
                 'obj_id': obj_id,
                 'shape_type': shape_type,
-                'mass':properties.get('mass'),
+                'mass':properties['mass'],
                 'radius': properties.get('radius'),
                 'width': properties.get('width'),
                 'height': properties.get('height'),
@@ -34,13 +79,13 @@ class DataHandler():
             }
 
             # 插入或更新属性表
-            with self.conn:
-                cursor = self.conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO object_properties 
-                    VALUES (:obj_id, :shape_type, :radius, :width, 
+            cursor.execute('''
+                INSERT INTO object_properties 
+                VALUES (:obj_id, :shape_type, :radius, :width, 
                             :height,:start,:destination, :vertices, :metadata)
-                ''', prop_data)
+            ''', prop_data)
+            conn.commit()
+            conn.close()
         except Exception as e:
             print(f"属性注册失败: {str(e)}")
     def collect_data(self,bodies,current_time):
@@ -81,7 +126,7 @@ class DataHandler():
                 )
             ''')
             #创建另一张存储物体属性的表
-            self.conn.execute('''CREATE TABLE IF NOT EXISTS object_properties
+            cursor.execute('''CREATE TABLE IF NOT EXISTS object_properties
                       (obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
                        shape_type TEXT CHECK(shape_type IN ('circle', 'rectangle', 'polygon','segment','spring')),
                        radius REAL,                 -- 圆形专用
@@ -93,7 +138,7 @@ class DataHandler():
             # 准备批量插入的数据
             data_to_insert = [
                 (row["idx"], row["timestamp"], row["x"], row["y"], row["vx"], row["vy"])
-                for row in self.databuffer
+                for row in self.buffer
             ]
             
             # 执行批量插入

@@ -111,22 +111,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(edit_action)
 
     def new_file(self):
-         # 弹出输入对话框
-        text, ok = QInputDialog.getText(
-            self,                    # 父窗口
-            "新建文件",              # 对话框标题
-            "请输入文件名:",         # 提示文字
-        )
-        
-        # 处理用户输入
-        if ok and text:  # 用户点击了OK且输入不为空
-            print(f"正在创建文件: {text}")
-            self.simulator.data_handler.current_file=text
-            print("成功创建文件")
-        else:  # 用户点击了Cancel
-            print("取消创建文件")
-            self.statusBar().showMessage("取消创建文件", 3000)
-
+        self.simulator.data_handler.create_initial_file()
     def open_file(self,index):
         path = self.model.filePath(index)
         if os.path.isfile(path):
