@@ -572,7 +572,7 @@ class MainWindow(QMainWindow):
 
     def update_scene(self):
         for _ in range(10):  # 多步模拟提升平滑度
-            self.simulator.space.step(1 / 600.0)
+            self.simulator.step(1 / 600.0)
 
         for entry in self.all_item:
             item = entry["item"]

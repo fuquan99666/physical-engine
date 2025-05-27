@@ -33,3 +33,7 @@ data={
 大作业雏形初具
 见mainwindow.py
 
+# 5.27 updated:
+
+成功找到datahandler.buffer中没有数据的原因了
+因为***mainwindow中并没有调用simulator.step(在该分支的mainwindow下搜素step只能在多部模拟提升平滑度处看见self.simulator.space.step()的调用)

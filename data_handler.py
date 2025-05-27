@@ -155,11 +155,12 @@ class DataHandler(QMainWindow):
                 INSERT INTO body_data (idx, timestamp, x, y, vx, vy)
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', data_to_insert)
-            self.conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA foreign_keys = ON")
             conn.commit()  # 提交事务
             conn.close()   # 关闭连接
         except Exception as e:
             error_msg = f"保存失败: {str(e)}"
+            print(error_msg)
             #self._show_error_dialog(error_msg)
 
     """另存为（选择新路径保存）"""
