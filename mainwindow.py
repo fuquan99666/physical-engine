@@ -280,7 +280,8 @@ class MainWindow(QMainWindow):
                 if isinstance(shape, pymunk.Circle) and radius_input:
                     new_radius = float(radius_input.text())
                     shape.unsafe_set_radius(new_radius)
-
+                    if(not is_static):
+                        body.moment = pymunk.moment_for_circle(mass, 0, new_radius)
                     item.setRect(-new_radius,-new_radius,2*new_radius,2*new_radius)
                     
 
