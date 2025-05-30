@@ -221,11 +221,14 @@ class MainWindow(QMainWindow):
                 width = width_vector.length
                 height = height_vector.length
 
-                #angle = width_vector.angle 
+              
                 width_input = QLineEdit(str(width))
                 height_input = QLineEdit(str(height))
                 layout.addRow("Width:", width_input)
                 layout.addRow("Height:", height_input)
+                angle=math.degrees(body.angle)
+                angle_input=QLineEdit(str(angle))
+                layout.addRow("Angle:",angle_input)
         elif isinstance(shape,pymunk.Segment):
             # 获取当前长度和角度
             vec = shape.b - shape.a#没毛病
@@ -284,6 +287,8 @@ class MainWindow(QMainWindow):
                 elif isinstance(shape, pymunk.Poly):
                     new_width = float(width_input.text())
                     new_height = float(height_input.text())
+                    new_angle=float(angle_input.text())
+                    new_angle_rad = math.radians(new_angle)
                     if(not is_static):
                         body.moment=pymunk.moment_for_box(m,(new_width,new_height))
 
@@ -292,6 +297,7 @@ class MainWindow(QMainWindow):
                     self.simulator.space.remove(shape)
                     self.simulator.space.add(new_shape)
                     self.selected_item_data["shape"]=new_shape
+                    body.angle=new_angle_rad
 
                     item.setRect(-new_width/2,-new_height/2,new_width,new_height)
 

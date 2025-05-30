@@ -57,7 +57,7 @@ class PhysicsSimulator:
         else:
 
             # 添加线段（类似于杆）(起点，终点，质量，半径（就是碰撞的宽度，缺省0.1），伸缩系数）
-            moment = pymunk.moment_for_segment(mass,
+            moment = 0.01*pymunk.moment_for_segment(mass,
                                                start,
                                                destination,
                                                radius)
