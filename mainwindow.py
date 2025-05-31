@@ -407,8 +407,8 @@ class MainWindow(QMainWindow):
                 else:
                     item.mouseMoveEvent= lambda e,b=item,bd=body,s=shape: None
                 self.update_graphics_position(item, body,shape, force=True)
-                cursor.commit()
-                cursor.close()
+                conn.commit()
+                conn.close()
             except ValueError:
                 print("Invalid input.")
 
@@ -559,6 +559,7 @@ class MainWindow(QMainWindow):
             if force or not hasattr(item, 'last_pos'):
                 item.setPos(target_pos)
                 item.last_pos = target_pos
+                item.setRotation(-math.degrees(body.angle))
             else:
                 current_pos = item.last_pos
                 smoothed = current_pos * 0.7 + target_pos * 0.3
