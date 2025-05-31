@@ -24,9 +24,9 @@ class DataHandler(QMainWindow):
         # 处理用户输入
         if ok and text:  # 用户点击了OK且输入不为空
             print(f"正在创建文件: {text}")
-            self.current_file=text
+            self.current_file=f'./dataset/{text}.db'
             print("成功创建文件")
-            conn=sqlite3.connect(f'./dataset/{self.current_file}.db')
+            conn=sqlite3.connect(self.current_file)
             cursor=conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS body_data (
@@ -43,6 +43,7 @@ class DataHandler(QMainWindow):
                            obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
                            shape_type TEXT,
                            mass REAL,
+                           color TEXT,
                            radius REAL
                            )
                            ''')
@@ -50,6 +51,7 @@ class DataHandler(QMainWindow):
                         obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
                         shape_type TEXT,
                         mass REAL,
+                        color TEXT,
                         width REAL,                  
                         height REAL
                         )
@@ -58,6 +60,7 @@ class DataHandler(QMainWindow):
                     obj_id INTEGER PRIMARY KEY,  -- 与轨迹表的obj_id关联
                     shape_type TEXT,
                     mass REAL,
+                    color TEXT,
                     radius REAL,
                     start_x REAL,                  -- 线段的起点
                     start_y REAL,     
@@ -76,7 +79,7 @@ class DataHandler(QMainWindow):
     def register_object(self, obj_id, shape_type, **properties):
         """注册物体属性到数据库"""
         try:
-            conn = sqlite3.connect(f'./dataset/{self.current_file}.db')       # 连接到数据库
+            conn = sqlite3.connect(self.current_file)       # 连接到数据库
             cursor = conn.cursor() # 创建游标对象
             type=shape_type
             if type=='circle':
@@ -84,29 +87,32 @@ class DataHandler(QMainWindow):
                     'obj_id': obj_id,
                     'shape_type': shape_type,
                     'mass':properties.get("mass"),
+                    'color':properties.get("color"),
                     'radius': properties.get('radius'),
                 }
                 cursor.execute('''
                     INSERT INTO circle_properties 
-                    VALUES(:obj_id, :shape_type, :mass, :radius)
+                    VALUES(:obj_id, :shape_type, :mass,:color, :radius)
                 ''',prop_data)
             elif type=='polygon':
                 prop_data={
                     'obj_id': obj_id,
                     'shape_type': shape_type,
                     'mass':properties.get("mass"),
+                    'color':properties.get("color"),
                     'width': properties.get('width'),
                     'height': properties.get('height'),
                 }
                 cursor.execute('''
                     INSERT INTO polygon_properties 
-                    VALUES(:obj_id, :shape_type, :mass, :width, :height)
+                    VALUES(:obj_id, :shape_type, :mass,:color, :width, :height)
                 ''',prop_data)
             elif type=='segment':
                 prop_data={
                     'obj_id': obj_id,
                     'shape_type': shape_type,
                     'mass':properties.get("mass"),
+                    'color':properties.get("color"),
                     'radius': properties.get('radius'),
                     'start_x':properties.get('start').x,
                     'start_y':properties.get('start').y,
@@ -116,7 +122,7 @@ class DataHandler(QMainWindow):
                 }
                 cursor.execute('''
                     INSERT INTO segment_properties 
-                    VALUES(:obj_id, :shape_type, :mass, :radius,:start_x,:start_y,:destination_x,:destination_y,:elasticity)
+                    VALUES(:obj_id, :shape_type, :mass,:color, :radius,:start_x,:start_y,:destination_x,:destination_y,:elasticity)
                 ''',prop_data)
             conn.commit()
             conn.close()
@@ -141,7 +147,6 @@ class DataHandler(QMainWindow):
     
     
     def save_to_sqlite(self, filepath):
-        filepath=f'./dataset/{filepath}.db'
         try:
             conn = sqlite3.connect(filepath)       # 连接到数据库
             cursor = conn.cursor()                 # 创建游标对象
@@ -175,8 +180,8 @@ class DataHandler(QMainWindow):
         #用户取消操作时，filepath会返回""
         if not filepath:
             return
-        self.save_to_sqlite(filepath)
-        self.current_file = filepath
+        self.current_file = f'./dataset/{filepath}.db'
+        self.save_to_sqlite(self.current_file)
     def save(self):
         if self.current_file:
             self.save_to_sqlite(self.current_file)

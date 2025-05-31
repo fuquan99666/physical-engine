@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
     QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter,QMenu,
-    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog,QInputDialog, QTreeView
+    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog,QInputDialog, QTreeView,QScrollArea, QButtonGroup
 )
 from PyQt6.QtCore import Qt, QTimer, QPointF,QDir
 from PyQt6.QtGui import QColor, QAction, QPen, QPainter, QFileSystemModel
@@ -13,7 +13,8 @@ import pyqtgraph as pg
 import os
 from add_object_dialog import AddObjectDialog
 from simulator import PhysicsSimulator as ph
-
+import drawmap
+import sqlite3
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -28,10 +29,12 @@ class MainWindow(QMainWindow):
         self.init_menubar()
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
-        #self.init_file_browser()
+       
         self._init_toolbar()
         self._init_ui()
+        self.monitor_path='./dataset/'
 
+        self.init_file_browser()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_scene)
         self.running = False
@@ -40,21 +43,83 @@ class MainWindow(QMainWindow):
         self.spring_selection = None
         self.springs = []
 
-    # def init_file_browser(self):
-    #     """初始化文件浏览器侧边栏"""
-    #     # 创建文件系统模型
-    #     self.model = QFileSystemModel()
-    #     self.model.setRootPath(QDir.currentPath())  # 设置初始目录
+    def init_file_browser(self):
+        """初始化文件浏览器侧边栏"""
+        # 创建文件浏览器容器
+        self.file_browser = QWidget()
+        self.file_browser.setMinimumWidth(170)
+        browser_layout = QVBoxLayout(self.file_browser)
         
-    #     # 创建树形视图
-    #     self.tree_view = QTreeView()
-    #     self.tree_view.setModel(self.model)
-    #     self.tree_view.setRootIndex(self.model.index(QDir.currentPath()))
-    #     self.tree_view.doubleClicked.connect(self.open_file)
-        
-    #     # 设置列宽和显示选项
-    #     self.tree_view.setColumnWidth(0, 300)  # 名称列宽度
-    #     self.tree_view.setHeaderHidden(False)   # 显示表头
+        # 添加标题和刷新按钮
+        title_bar = QHBoxLayout()
+        self.path_label = QLabel("历史数据")
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.clicked.connect(self.update_file_buttons)
+        title_bar.addWidget(self.path_label)
+        title_bar.addWidget(refresh_btn)
+        browser_layout.addLayout(title_bar)
+
+        # 创建可滚动区域
+        scroll = QScrollArea()
+        self.button_container = QWidget()
+        self.button_layout = QVBoxLayout(self.button_container)
+        self.button_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(self.button_container)
+        scroll.setWidgetResizable(True)
+        browser_layout.addWidget(scroll)
+
+        # 初始化按钮组和定时器
+        self.button_group = QButtonGroup()
+        self.button_group.buttonClicked.connect(self.on_file_button_clicked)
+        self.update_file_buttons()
+
+        # # 设置定时刷新（每2秒）
+        # self.file_timer = QTimer()
+        # self.file_timer.timeout.connect(self.update_file_buttons)
+        # self.file_timer.start(2000)
+
+        # 将文件浏览器添加到主界面
+        self.splitter.insertWidget(0, self.file_browser)  # 根据QSplitter结构调整
+
+    def update_file_buttons(self):
+        """更新文件按钮列表
+        只需要在创建和另存为的时候调用
+        """
+        # 清空现有按钮
+        while self.button_layout.count():
+            child = self.button_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # 生成新按钮
+        dir = QDir(self.monitor_path)
+        for file_info in dir.entryInfoList(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllEntries):
+            btn = QPushButton(file_info.fileName())
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    text-align: middle; 
+                    padding: 5px;
+                    border: 1px solid #ddd;
+                    border-radius: 3px;
+                }
+                QPushButton:hover { background-color: #b0b0b0; }
+                QPushButton:checked { background-color: #a0a0a0; }
+            """)
+            btn.setToolTip(file_info.absoluteFilePath())
+            self.button_group.addButton(btn)
+            self.button_layout.addWidget(btn)
+
+    def on_file_button_clicked(self, button):
+        """文件按钮点击处理"""
+        file_path = button.toolTip().split('/')[-1]
+        print(f"选中文件：{file_path}")
+        drawmap.pic_for_all(file_path)
+        # 后续可添加双击打开等逻辑
+    def loading_new_files(self):
+        #清空所有的画面并加载新画面。
+        #且让我想想怎么写
+        pass
     def init_menubar(self):
          # 创建菜单栏
         menu_bar = self.menuBar()
@@ -92,6 +157,10 @@ class MainWindow(QMainWindow):
         create_spring=QAction("spring",self)
         create_spring.triggered.connect(self.prepare_add_spring)
         create_menu.addAction(create_spring)
+
+        #帮助菜单（暂时还没有什么用）
+        file_menu=menu_bar.addMenu("帮助(&H)")
+
     def _init_toolbar(self):
         actions = [
             ("Start/Pause", self.toggle_simulation),
@@ -111,6 +180,7 @@ class MainWindow(QMainWindow):
 
     def new_file(self):
         self.simulator.data_handler.create_initial_file()
+        self.update_file_buttons()#在创建新文件后再更新
     def open_file(self,index):
         path = self.model.filePath(index)
         if os.path.isfile(path):
@@ -119,10 +189,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"已打开文件: {path}", 3000)
                 print(f"打开文件: {path}")
                 
-                # 示例：读取文本文件内容
-                # with open(path, 'r') as f:
-                #     print(f.read())
-                
+              
             except Exception as e:
                 self.statusBar().showMessage(f"打开失败: {str(e)}", 5000)
         else:
@@ -258,6 +325,11 @@ class MainWindow(QMainWindow):
                 body.position = x, y
                 body.velocity = vx, vy
 
+                #连接到相关数据库，准备更新属性
+                conn=sqlite3.connect(self.simulator.data_handler.current_file)
+                cursor=conn.cursor()
+                item_idx=self.all_item.index(self.selected_item_data)
+
                 if is_static_checkbox.isChecked():
                     body.body_type = pymunk.Body.STATIC
                     #body.mass = float("inf")
@@ -283,6 +355,8 @@ class MainWindow(QMainWindow):
                     if(not is_static):
                         body.moment = pymunk.moment_for_circle(mass, 0, new_radius)
                     item.setRect(-new_radius,-new_radius,2*new_radius,2*new_radius)
+                    sql = "UPDATE circle_properties SET radius = ? WHERE obj_id = ?"
+                    cursor.execute(sql,(new_radius,item_idx))
                     
 
                 elif isinstance(shape, pymunk.Poly):
@@ -299,8 +373,9 @@ class MainWindow(QMainWindow):
                     self.simulator.space.add(new_shape)
                     self.selected_item_data["shape"]=new_shape
                     body.angle=new_angle_rad
-
                     item.setRect(-new_width/2,-new_height/2,new_width,new_height)
+                    sql = "UPDATE polygon_properties SET height=?,width=? WHERE obj_id = ?"
+                    cursor.execute(sql,(new_height,new_width,item_idx))
 
                 elif isinstance(shape, pymunk.Segment) and length_input and angle_input:
                     new_length = float(length_input.text())
@@ -322,7 +397,7 @@ class MainWindow(QMainWindow):
                     # 更新 body 角度
                     body.angle = new_angle_rad
                     shape=new_shape
-
+                    #此处的数据更改尚未完成，因为有点复杂，可能需要修改segment的存储代码结构
                     item.setLine(new_shape.a.x, new_shape.a.y, new_shape.b.x, new_shape.b.y)
                 item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
 
@@ -332,7 +407,8 @@ class MainWindow(QMainWindow):
                 else:
                     item.mouseMoveEvent= lambda e,b=item,bd=body,s=shape: None
                 self.update_graphics_position(item, body,shape, force=True)
-
+                cursor.commit()
+                cursor.close()
             except ValueError:
                 print("Invalid input.")
 
@@ -377,13 +453,13 @@ class MainWindow(QMainWindow):
         right_widget=QWidget()
         right_widget.setLayout(right_layout)
 
-        splitter=QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.view)
-        splitter.addWidget(right_widget)
-        splitter.setSizes([800,400])
+        self.splitter=QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(self.view)
+        self.splitter.addWidget(right_widget)
+        self.splitter.setSizes([800,400])
 
         main_layout = QHBoxLayout()
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.splitter)
 
 
         central_widget.setLayout(main_layout)
@@ -492,7 +568,7 @@ class MainWindow(QMainWindow):
 
     def select_item(self, item):
         for entry in self.all_item:
-            if entry["item"] == item:
+            if entry["item"] == item:#此处找到all_item列表中的item元素
                 self.selected_item_data = entry
                 if self.spring_selection is not None:
                     self.spring_selection.append(entry)
@@ -501,7 +577,6 @@ class MainWindow(QMainWindow):
                         self.spring_selection = None
                         self.statusBar().clearMessage()
                 break
-
     def add_spring_between_bodies(self):
         e1, e2 = self.spring_selection
         b1, b2 = e1["body"], e2["body"]
@@ -574,6 +649,7 @@ class MainWindow(QMainWindow):
     def save_as(self):
         try:
             self.simulator.data_handler.save_as()
+            self.update_file_buttons()
         except Exception as e:
             print(e)
 

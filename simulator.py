@@ -33,7 +33,7 @@ class PhysicsSimulator:
         self.bodies.append(body)
         self.create_index+=1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,"circle",mass=mass,radius=out_radius)
+        self.data_handler.register_object(self.create_index,"circle",mass=mass,radius=out_radius,color='00ff00')
         return body,shape
 
     def add_box(self, p_x, p_y, height, width, mass, elasticity=0.5):
@@ -48,7 +48,7 @@ class PhysicsSimulator:
         self.bodies.append(body)
         self.create_index+=1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,'polygon',mass=mass,width=width,height=height)
+        self.data_handler.register_object(self.create_index,'polygon',mass=mass,width=width,height=height,color='00ff00')
         return body,shape
 
     def add_segment(self, start, destination, mass, radius=0.1, elasticity=0.5, static=False):
@@ -71,7 +71,7 @@ class PhysicsSimulator:
         self.bodies.append(body)
         self.create_index+=1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,'segment',start=start,destination=destination,radius=radius)
+        self.data_handler.register_object(self.create_index,'segment',start=start,destination=destination,radius=radius,color='00ff00')
         return body,shape
 
     def add_spring(self, body1, body2, stiffness, damping, anchor1=(0, 0), anchor2=(0, 0), rest_length=100):
