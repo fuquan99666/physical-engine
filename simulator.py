@@ -11,16 +11,24 @@ class PhysicsSimulator:
         self.bodies = []  # 全部物体
         self.time_scale = 1.0  # 用于控制时间流速
         self.data_handler = DataHandler()  # 统计数据
-        self.create_index=0
+        self.create_index = 0
+
     def get_gravity(self):
         return self.space.gravity
 
     def set_gravity(self, gx, gy):
         self.space.gravity = (gx, gy)
+
+    def get_time_scale(self):
+        return self.time_scale
+
+    def set_time_scale(self,ratio):
+        self.time_scale=ratio
+
     def init_datahandler(self):
-        if self.data_handler.current_file==None:
+        if self.data_handler.current_file == None:
             self.data_handler.create_initial_file()
-        
+
     def add_circle(self, p_x, p_y, mass, out_radius, elasticity=0.5, inner_radius=0):
 
         # 添加圆形物体(x,y,质量，外半径，伸缩系数，内半径（缺省为零）)
@@ -31,10 +39,10 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,"circle",mass=mass,radius=out_radius,color='00ff00')
-        return body,shape
+        self.data_handler.register_object(self.create_index, "circle", mass=mass, radius=out_radius, color='00ff00')
+        return body, shape
 
     def add_box(self, p_x, p_y, height, width, mass, elasticity=0.5):
 
@@ -46,10 +54,11 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,'polygon',mass=mass,width=width,height=height,color='00ff00')
-        return body,shape
+        self.data_handler.register_object(self.create_index, 'polygon', mass=mass, width=width, height=height,
+                                          color='00ff00')
+        return body, shape
 
     def add_segment(self, start, destination, mass, radius=0.1, elasticity=0.5, static=False):
         if static:
@@ -57,10 +66,10 @@ class PhysicsSimulator:
         else:
 
             # 添加线段（类似于杆）(起点，终点，质量，半径（就是碰撞的宽度，缺省0.1），伸缩系数）
-            moment = 0.01*pymunk.moment_for_segment(mass,
-                                               start,
-                                               destination,
-                                               radius)
+            moment = 0.01 * pymunk.moment_for_segment(mass,
+                                                      start,
+                                                      destination,
+                                                      radius)
             body = pymunk.Body(mass,
                                moment)
         body.position = (start + destination) / 2
@@ -69,10 +78,11 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
-        self.data_handler.register_object(self.create_index,'segment',start=start,destination=destination,radius=radius,color='00ff00')
-        return body,shape
+        self.data_handler.register_object(self.create_index, 'segment', start=start, destination=destination,
+                                          radius=radius, color='00ff00')
+        return body, shape
 
     def add_spring(self, body1, body2, stiffness, damping, anchor1=(0, 0), anchor2=(0, 0), rest_length=100):
 
@@ -86,7 +96,7 @@ class PhysicsSimulator:
             stiffness,
             damping)
         self.space.add(spring)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
         return spring
 
@@ -106,12 +116,9 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
-        return body,shape
-    
-    
-    
+        return body, shape
 
     def add_pivot_joint(self, body_a, body_b, anchor_a, anchor_b):
         """
@@ -129,7 +136,7 @@ class PhysicsSimulator:
             anchor_b
         )
         self.space.add(joint)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
         return joint
 
@@ -148,11 +155,10 @@ class PhysicsSimulator:
             max_length
         )
         self.space.add(joint)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
         return joint
-    
-    
+
     def add_gear_joint(self, body_a, body_b, phase, ratio):
         """
         创建同步旋转的齿轮约束
@@ -161,11 +167,10 @@ class PhysicsSimulator:
         """
         joint = pymunk.GearJoint(body_a, body_b, phase, ratio)
         self.space.add(joint)
-        self.create_index+=1
+        self.create_index += 1
         self.init_datahandler()
         return joint
-    
-    
+
     def update_gravity(self, g_x, g_y):
 
         # 更新实时均匀力场
@@ -185,10 +190,12 @@ class PhysicsSimulator:
 
     def step(self, dt):
 
+        scaled_dt = dt * self.time_scale
+
         # 推进物理引擎一步
-        self.space.step(dt)
+        self.space.step(scaled_dt)
         # 同步记录数据
-        self.data_handler.update_sim_time(dt)
+        self.data_handler.update_sim_time(scaled_dt)
         self.data_handler.collect_data(self.bodies,
                                        self.data_handler.current_sim_time)
 
