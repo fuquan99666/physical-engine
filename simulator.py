@@ -1,6 +1,7 @@
+#core/simulator.py
 import pymunk
 from pymunk import Vec2d
-from .data_handler import DataHandler
+from core.data_handler import DataHandler
 
 
 class PhysicsSimulator:
@@ -18,6 +19,12 @@ class PhysicsSimulator:
     def set_gravity(self, gx, gy):
         self.space.gravity = (gx, gy)
 
+    def get_time_scale(self):
+        return self.time_scale
+
+    def set_time_scale(self,ratio):
+        self.time_scale=ratio
+
     def add_circle(self, p_x, p_y, mass, out_radius, elasticity=0.5, inner_radius=0):
 
         # 添加圆形物体(x,y,质量，外半径，伸缩系数，内半径（缺省为零）)
@@ -28,7 +35,7 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
     def add_box(self, p_x, p_y, height, width, mass, elasticity=0.5):
 
@@ -40,7 +47,7 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
     def add_segment(self, start, destination, mass, radius=0.1, elasticity=0.5, static=False):
         if static:
@@ -60,7 +67,7 @@ class PhysicsSimulator:
         shape.elasticity = elasticity
         self.space.add(body, shape)
         self.bodies.append(body)
-        return body
+        return body,shape
 
     def add_spring(self, body1, body2, stiffness, damping, anchor1=(0, 0), anchor2=(0, 0), rest_length=100):
 
@@ -93,9 +100,6 @@ class PhysicsSimulator:
         self.space.add(body, shape)
         self.bodies.append(body)
         return body
-    
-    
-    
 
     def add_pivot_joint(self, body_a, body_b, anchor_a, anchor_b):
         """
@@ -131,8 +135,7 @@ class PhysicsSimulator:
         )
         self.space.add(joint)
         return joint
-    
-    
+
     def add_gear_joint(self, body_a, body_b, phase, ratio):
         """
         创建同步旋转的齿轮约束
@@ -142,8 +145,7 @@ class PhysicsSimulator:
         joint = pymunk.GearJoint(body_a, body_b, phase, ratio)
         self.space.add(joint)
         return joint
-    
-    
+
     def update_gravity(self, g_x, g_y):
 
         # 更新实时均匀力场
@@ -163,12 +165,15 @@ class PhysicsSimulator:
 
     def step(self, dt):
 
+        scaled_dt = dt * self.time_scale
+
         # 推进物理引擎一步
-        self.space.step(dt)
+        self.space.step(scaled_dt)
         # 同步记录数据
-        self.data_handler.update_sim_time(dt)
+        self.data_handler.update_sim_time(scaled_dt)
         self.data_handler.collect_data(self.bodies,
                                        self.data_handler.current_sim_time)
+
 
     def clear(self):
 
