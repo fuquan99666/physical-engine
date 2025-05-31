@@ -22,8 +22,10 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
 
         self.gravity = 10
+        self.F=10
         self.simulator = ph()
-        self.simulator.space.gravity = (0, -self.gravity)
+        self.simulator.space.gravity = (self.F, -self.gravity)
+        
         self.simulator.space.collision_slop = 0.01
         self.spring_update_counter=0
         self.init_menubar()
@@ -74,9 +76,9 @@ class MainWindow(QMainWindow):
         self.update_file_buttons()
 
         # # 设置定时刷新（每2秒）
-        # self.file_timer = QTimer()
-        # self.file_timer.timeout.connect(self.update_file_buttons)
-        # self.file_timer.start(2000)
+        self.file_timer = QTimer()
+        self.file_timer.timeout.connect(self.update_file_buttons)
+        self.file_timer.start(2000)
 
         # 将文件浏览器添加到主界面
         self.splitter.insertWidget(0, self.file_browser)  # 根据QSplitter结构调整
@@ -436,10 +438,20 @@ class MainWindow(QMainWindow):
         self.start_btn.clicked.connect(self.toggle_simulation)
         self.gravity_slider.valueChanged.connect(self.update_gravity)
 
+        self.H_slider=QSlider(Qt.Orientation.Horizontal)
+        self.H_slider.setRange(-100,100)
+        self.H_slider.setValue(self.F)
+        self.H_label = QLabel(f"水平力: {self.F}")
+
+        self.H_slider.valueChanged.connect(self.update_F)
+
         control_layout = QVBoxLayout()
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.gravity_label)
         control_layout.addWidget(self.gravity_slider)
+
+        control_layout.addWidget(self.H_label)
+        control_layout.addWidget(self.H_slider)
 
         self.plot = pg.PlotWidget()
         self.plot.setYRange(0, 400)
@@ -474,7 +486,8 @@ class MainWindow(QMainWindow):
 
     def reset_simulation(self):
         self.simulator = ph()
-        self.simulator.space.gravity = (0, -self.gravity)
+        self.update_F(10)
+        self.update_gravity(10)
 
         for obj in self.all_item:
             self.scene.removeItem(obj["item"])
@@ -491,8 +504,15 @@ class MainWindow(QMainWindow):
 
     def update_gravity(self, value):
         self.gravity = value
-        self.simulator.space.gravity = (0, -value)
+        self.simulator.space.gravity = (self.F, -self.gravity)
         self.gravity_label.setText(f"Gravity: {value}")
+        self.gravity_slider.setValue(self.gravity)
+    
+    def update_F(self,value):
+        self.F=value
+        self.simulator.space.gravity=(self.F,-self.gravity)
+        self.H_label.setText(f"水平力: {value}")
+        self.H_slider.setValue(self.F)
 
 
 
