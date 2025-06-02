@@ -3,14 +3,16 @@ import sqlite3
 import pymunk
 import sys
 import math
+import requests
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
-    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem, QSplitter, QMenu,
-    QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QColorDialog, QInputDialog, QTreeView, QMessageBox,
-    QFrame, QScrollArea, QButtonGroup
+    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter,QMenu,
+    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog,QInputDialog, QTreeView,QScrollArea, QButtonGroup,
+    QTextEdit,QMessageBox,QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer, QPointF, QDir, QRectF, QSizeF
+from PyQt6.QtCore import Qt, QTimer, QPointF,QDir, QThread, pyqtSignal, QDir, QRectF, QSizeF
 from PyQt6.QtGui import QColor, QAction, QPen, QPainter, QFileSystemModel
 import pyqtgraph as pg
 import os
@@ -19,6 +21,44 @@ from PyQt6.QtMultimediaWidgets import QVideoWidget, QGraphicsVideoItem
 from PyQt6.QtCore import QUrl
 
 import drawmap
+import sqlite3
+
+class ChatAPICaller(QThread):
+    finished = pyqtSignal(str)
+
+    def __init__(self, prompt):
+        super().__init__()
+        self.prompt = prompt
+
+    def run(self):
+        url = "https://api.dify.ai/v1/chat-messages"
+        headers = {
+            "Authorization": "Bearer app-DWvdU4wMPLqDuSQGtx2OCRlt",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "inputs": {},
+            "query": self.prompt,
+            "response_mode": "blocking",
+            "conversation_id": "",
+            "user": "test-user"
+        }
+
+        try:
+            res = requests.post(url, headers=headers, json=data, timeout=180)
+            if res.status_code == 200:
+                reply = res.json().get("answer", "[无回答]")
+            else:
+                reply = f"[失败 {res.status_code}] {res.text}"
+        except requests.exceptions.Timeout:
+            reply = "[超时] 服务器3分钟无响应"
+        except Exception as e:
+            reply = f"[异常] {str(e)}"
+
+        self.finished.emit(reply)
+
+
+
 from core.simulator import PhysicsSimulator as ph
 
 
@@ -487,7 +527,7 @@ class PhysicsSimulatorWindow(QMainWindow):
 
                 if is_static_checkbox.isChecked():
                     body.body_type = pymunk.Body.STATIC
-                    # body.mass = float("inf")
+
                 else:
                     body.body_type = pymunk.Body.DYNAMIC
                     body.mass = m
@@ -542,6 +582,9 @@ class PhysicsSimulatorWindow(QMainWindow):
                     new_a = -half_vec
                     new_b = half_vec
 
+                    # 更新 body 角度
+                    body.angle = new_angle_rad
+
                     new_shape = pymunk.Segment(body, new_a, new_b, shape.radius)
                     new_shape.elasticity = shape.elasticity
 
@@ -549,10 +592,10 @@ class PhysicsSimulatorWindow(QMainWindow):
                     self.simulator.space.add(new_shape)
                     self.selected_item_data["shape"] = new_shape
 
-                    # 更新 body 角度
-                    body.angle = new_angle_rad
-                    shape = new_shape
-                    # 此处的数据更改尚未完成，因为有点复杂，可能需要修改segment的存储代码结构
+
+                    shape=new_shape
+                    #此处的数据更改尚未完成，因为有点复杂，可能需要修改segment的存储代码结构
+
                     item.setLine(new_shape.a.x, new_shape.a.y, new_shape.b.x, new_shape.b.y)
                 item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
 
@@ -604,14 +647,31 @@ class PhysicsSimulatorWindow(QMainWindow):
         control_layout.addWidget(self.H_label)
         control_layout.addWidget(self.H_slider)
 
-        self.plot = pg.PlotWidget()
-        self.plot.setYRange(0, 400)
-        self.plot_data = []
-        self.plot_curve = self.plot.plot(self.plot_data, pen='g')
+        # self.plot = pg.PlotWidget()
+        # self.plot.setYRange(0, 400)
+        # self.plot_data = []
+        # self.plot_curve = self.plot.plot(self.plot_data, pen='g')
+        # 聊天记录框（只读）
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+
+
+        # 输入框和发送按钮
+        input_layout = QHBoxLayout()
+        self.input_line = QLineEdit()
+        self.send_button = QPushButton("发送")
+        self.send_button.clicked.connect(self.send_message)
+
+        input_layout.addWidget(self.input_line)
+        input_layout.addWidget(self.send_button)
+
+
 
         right_layout = QVBoxLayout()
         right_layout.addLayout(control_layout)
-        right_layout.addWidget(self.plot)
+        #right_layout.addWidget(self.plot)
+        right_layout.addWidget(self.chat_display)
+        right_layout.addLayout(input_layout)
 
         right_widget = QWidget()
         right_widget.setLayout(right_layout)
@@ -625,6 +685,27 @@ class PhysicsSimulatorWindow(QMainWindow):
         main_layout.addWidget(self.splitter)
 
         central_widget.setLayout(main_layout)
+
+    def send_message(self):
+        user_msg = self.input_line.text().strip()
+        if not user_msg:
+            return
+
+        # 显示用户消息
+        self.chat_display.append(f"你：{user_msg}")
+        self.input_line.clear()
+
+        self.chat_display.append("🤖 正在生成回复...")
+
+        self.api_thread = ChatAPICaller(user_msg)
+        self.api_thread.finished.connect(self.on_api_reply)
+        self.api_thread.start()
+
+    def on_api_reply(self, reply_text: str):
+        """收到线程返回的结果后更新到聊天框"""
+        self.chat_display.append(f"机器人：{reply_text}")
+
+
 
     def toggle_simulation(self):
         self.running = not self.running
@@ -641,11 +722,15 @@ class PhysicsSimulatorWindow(QMainWindow):
 
         for obj in self.all_item:
             self.scene.removeItem(obj["item"])
+        for spring,line in self.springs:
+            self.scene.removeItem(line)
+        self.springs.clear()#从弹簧组中移除
+          
         self.all_item.clear()
 
         self.selected_item_data = None
-        self.plot_data.clear()
-        self.plot_curve.setData([])
+        # self.plot_data.clear()
+        # self.plot_curve.setData([])
 
         self.running = False
         self.timer.stop()
@@ -760,7 +845,9 @@ class PhysicsSimulatorWindow(QMainWindow):
         line.setPen(pen)
         self.scene.addItem(line)
         self.springs.append((spring, line))
-        self.update_spring_line_with_smoothing(spring, line, 1)
+     
+        self.update_spring_line_with_smoothing(spring,line,1)
+
         print("Spring created. Click Start to see it in action.")
 
     def quit_select(self):
@@ -771,13 +858,18 @@ class PhysicsSimulatorWindow(QMainWindow):
             return
         item = self.selected_item_data["item"]
         body = self.selected_item_data["body"]
-        shape = self.selected_item_data["shape"]
+        shape=self.selected_item_data["shape"]
+        for spring,line in self.springs:
+            if spring.a is body or spring.b is body:
+                self.scene.removeItem(line)
+                self.simulator.space.remove(spring)
+                self.springs.remove((spring,line))#从弹簧组中移除
+
         self.scene.removeItem(item)
         self.simulator.space.remove(body, shape)
         self.all_item.remove(self.selected_item_data)
         self.selected_item_data = None
-        self.plot_data.clear()
-        self.plot_curve.setData([])
+
 
     def prepare_add_spring(self):
         self.spring_selection = []
@@ -828,12 +920,6 @@ class PhysicsSimulatorWindow(QMainWindow):
             body = entry["body"]
             shape = entry["shape"]
             self.update_graphics_position(item, body, shape)
-
-            if self.selected_item_data and self.selected_item_data["item"] == item:
-                self.plot_data.append(body.position.y)
-                if len(self.plot_data) > 100:
-                    self.plot_data = self.plot_data[-100:]
-                self.plot_curve.setData(self.plot_data)
         self.spring_update_counter += 1
         if self.spring_update_counter % 2 == 0:
             for spring, line in self.springs:
