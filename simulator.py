@@ -8,6 +8,7 @@ class PhysicsSimulator:
         # 基础参数
         self.space = pymunk.Space()
         self.space.gravity = (0, 981)  # 重力
+   
         self.bodies = []  # 全部物体
         self.time_scale = 1.0  # 用于控制时间流速
         self.data_handler = DataHandler()  # 统计数据
