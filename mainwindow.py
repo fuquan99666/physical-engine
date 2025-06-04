@@ -223,11 +223,13 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
 
+        self.current_file=None
         self._init_toolbar()
         self._init_ui()
         self.monitor_path = './dataset/'
-
+        
         self.init_file_browser()
+        self.init_file_status_bar()
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_scene)
         self.running = False
@@ -299,6 +301,39 @@ class PhysicsSimulatorWindow(QMainWindow):
         
         # 显示菜单
         menu.exec(button.mapToGlobal(point))
+
+    def init_file_status_bar(self):
+        """在工具栏下方创建文件状态栏"""
+        self.file_status_container = QWidget()
+        file_status_layout = QHBoxLayout(self.file_status_container)
+        file_status_layout.setContentsMargins(5, 2, 5, 2)
+        
+        # 创建文件名标签
+        self.file_name_label = QLabel(f"当前文件: {self.current_file}")
+        self.file_name_label.setStyleSheet("""
+            QLabel {
+                padding: 3px 8px;
+                background-color: #c0c0c0;
+                border: 1px solid #a0c0e0;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+        """)
+        
+        file_status_layout.addWidget(self.file_name_label)
+        file_status_layout.addStretch()  # 添加弹性空间
+        
+        # 将状态栏容器添加到主窗口
+        self.addToolBarBreak()  # 确保新工具栏在原有工具栏下方
+        self.file_status_toolbar = QToolBar("File Status")
+        self.file_status_toolbar.addWidget(self.file_status_container)
+        self.addToolBar(self.file_status_toolbar)
+
+    def update_file_status(self):
+        """更新文件状态栏显示"""
+        self.file_name_label.setText(f"当前文件: {self.current_file}")
+        
+
     def delete_file_or_folder(self, button):
         """删除文件或文件夹"""
         file_path = button.file_path
@@ -309,14 +344,8 @@ class PhysicsSimulatorWindow(QMainWindow):
         confirm_dialog.setWindowTitle("确认删除")
         layout = QVBoxLayout(confirm_dialog)
         
-        message = QLabel(f"确定要永久删除{'文件夹' if is_directory else '文件'}吗？\n{file_path}")
+        message = QLabel(f"确定要永久删除文件吗？\n{file_path.split('/')[-1]}")
         layout.addWidget(message)
-        
-        # 添加复选框（仅删除文件夹时显示）
-        recursive_delete = QCheckBox("递归删除所有内容") if is_directory else None
-        if recursive_delete:
-            layout.addWidget(recursive_delete)
-        
         # 添加按钮
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -327,21 +356,11 @@ class PhysicsSimulatorWindow(QMainWindow):
         # 显示对话框
         if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
             try:
-                if is_directory:
-                    # 删除文件夹
-                    import shutil
-                    if recursive_delete and recursive_delete.isChecked():
-                        # 递归删除整个文件夹
-                        shutil.rmtree(file_path)
-                    else:
-                        # 只删除空文件夹
-                        os.rmdir(file_path)
-                    self.statusBar().showMessage(f"已删除文件夹: {file_path.split('/')[-1]}", 3000)
-                else:
-                    # 删除文件
-                    os.remove(file_path)
-                    self.statusBar().showMessage(f"已删除文件: {file_path.split('/')[-1]}", 3000)
-                
+                if file_path.split('/')[-1]==self.current_file:
+                    raise Exception('不能删除选择中的文件')
+                # 删除文件
+                os.remove(file_path)
+                self.statusBar().showMessage(f"已删除文件: {file_path.split('/')[-1]}", 3000)
                 # 刷新文件列表
                 self.update_file_buttons()
                 
@@ -362,20 +381,23 @@ class PhysicsSimulatorWindow(QMainWindow):
         new_name, ok = QInputDialog.getText(
             self,
             "重命名",
-            f"请输入新的{'文件夹' if is_directory else '文件'}名称:",
+            f"请输入新的文件名称:",
             QLineEdit.EchoMode.Normal,
             current_name
         )
         
         if ok and new_name and new_name != current_name:
             try:
+
                 # 构建新路径
                 dir_path = os.path.dirname(file_path)
                 new_path = os.path.join(dir_path, new_name)
                 
                 # 执行重命名
                 os.rename(file_path, new_path)
-                
+                if file_path.split('/')[-1]==self.current_file:
+                    self.current_file=new_path.split('\\')[-1]
+                    self.update_file_status()
                 # 刷新文件列表
                 self.update_file_buttons()
                 
@@ -406,8 +428,8 @@ class PhysicsSimulatorWindow(QMainWindow):
                     border: 1px solid #ddd;
                     border-radius: 3px;
                 }
-                QPushButton:hover { background-color: #f0f0f0; }
-                QPushButton:checked { background-color: #e0e0ff; }
+                QPushButton:hover { background-color: #b0b0b0; }
+                QPushButton:checked { background-color: #d0d0d0; }
             """)
             btn.setToolTip(file_info.absoluteFilePath())
             
@@ -429,7 +451,6 @@ class PhysicsSimulatorWindow(QMainWindow):
     def on_file_button_clicked(self, button):
         """文件按钮点击处理"""
         file_path = button.toolTip().split('/')[-1]
-        print(f"选中文件：{file_path}")
         drawmap.pic_for_all(file_path)
         # 后续可添加双击打开等逻辑
 
@@ -498,8 +519,10 @@ class PhysicsSimulatorWindow(QMainWindow):
 
     def new_file(self):
         self.simulator.data_handler.create_initial_file()
+        self.current_file=self.simulator.data_handler.current_file.split('/')[-1]
+        self.update_file_status()
+        self.statusBar().showMessage("已创建新文件",3000)
         self.update_file_buttons()  # 在创建新文件后再更新
-
     def open_file(self, index):
         path = self.model.filePath(index)
         if os.path.isfile(path):
