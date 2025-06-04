@@ -59,7 +59,7 @@ class ChatAPICaller(QThread):
 
 
 
-from core.simulator import PhysicsSimulator as ph
+from simulator import PhysicsSimulator as ph
 
 
 
@@ -260,7 +260,17 @@ class PhysicsSimulatorWindow(QMainWindow):
         scroll.setWidget(self.button_container)
         scroll.setWidgetResizable(True)
         browser_layout.addWidget(scroll)
-
+        directory=QDir(self.monitor_path)
+        for file_info in directory.entryInfoList(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllEntries):
+            btn = QPushButton(file_info.fileName())
+            # ... 其他按钮设置代码保持不变 ...
+            
+            # 启用右键菜单
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda point, b=btn: self.show_file_context_menu(b, point)
+            )
+            self.button_layout.addWidget(btn)
         # 初始化按钮组和定时器
         self.button_group = QButtonGroup()
         self.button_group.buttonClicked.connect(self.on_file_button_clicked)
@@ -270,23 +280,123 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.file_timer = QTimer()
         self.file_timer.timeout.connect(self.update_file_buttons)
         self.file_timer.start(2000)
-
+        
+            
         # 将文件浏览器添加到主界面
         self.splitter.insertWidget(0, self.file_browser)  # 根据QSplitter结构调整
+    def show_file_context_menu(self,button,point):
+        menu = QMenu(self)
+        
+        # 删除操作
+        delete_action = QAction("删除", self)
+        delete_action.triggered.connect(lambda checked, b=button: self.delete_file_or_folder(b))
+        menu.addAction(delete_action)
+        
+        # 重命名操作（可选）
+        rename_action = QAction("重命名", self)
+        rename_action.triggered.connect(lambda checked, b=button: self.rename_file_or_folder(b))
+        menu.addAction(rename_action)
+        
+        # 显示菜单
+        menu.exec(button.mapToGlobal(point))
+    def delete_file_or_folder(self, button):
+        """删除文件或文件夹"""
+        file_path = button.file_path
+        is_directory = button.is_directory
+        
+        # 创建确认对话框
+        confirm_dialog = QDialog(self)
+        confirm_dialog.setWindowTitle("确认删除")
+        layout = QVBoxLayout(confirm_dialog)
+        
+        message = QLabel(f"确定要永久删除{'文件夹' if is_directory else '文件'}吗？\n{file_path}")
+        layout.addWidget(message)
+        
+        # 添加复选框（仅删除文件夹时显示）
+        recursive_delete = QCheckBox("递归删除所有内容") if is_directory else None
+        if recursive_delete:
+            layout.addWidget(recursive_delete)
+        
+        # 添加按钮
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(confirm_dialog.accept)
+        buttons.rejected.connect(confirm_dialog.reject)
+        layout.addWidget(buttons)
+        
+        # 显示对话框
+        if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                if is_directory:
+                    # 删除文件夹
+                    import shutil
+                    if recursive_delete and recursive_delete.isChecked():
+                        # 递归删除整个文件夹
+                        shutil.rmtree(file_path)
+                    else:
+                        # 只删除空文件夹
+                        os.rmdir(file_path)
+                    self.statusBar().showMessage(f"已删除文件夹: {file_path.split('/')[-1]}", 3000)
+                else:
+                    # 删除文件
+                    os.remove(file_path)
+                    self.statusBar().showMessage(f"已删除文件: {file_path.split('/')[-1]}", 3000)
+                
+                # 刷新文件列表
+                self.update_file_buttons()
+                
+            except Exception as e:
+                error_msg = f"删除失败: {str(e)}"
+                self.statusBar().showMessage(error_msg, 5000)
+                print(error_msg)
 
+    def rename_file_or_folder(self, button):
+        """重命名文件或文件夹"""
+        file_path = button.file_path
+        is_directory = button.is_directory
+        
+        # 获取当前名称
+        current_name = os.path.basename(file_path)
+        
+        # 弹出输入对话框
+        new_name, ok = QInputDialog.getText(
+            self,
+            "重命名",
+            f"请输入新的{'文件夹' if is_directory else '文件'}名称:",
+            QLineEdit.EchoMode.Normal,
+            current_name
+        )
+        
+        if ok and new_name and new_name != current_name:
+            try:
+                # 构建新路径
+                dir_path = os.path.dirname(file_path)
+                new_path = os.path.join(dir_path, new_name)
+                
+                # 执行重命名
+                os.rename(file_path, new_path)
+                
+                # 刷新文件列表
+                self.update_file_buttons()
+                
+                self.statusBar().showMessage(f"已重命名为: {new_name}", 3000)
+            except Exception as e:
+                error_msg = f"重命名失败: {str(e)}"
+                self.statusBar().showMessage(error_msg, 5000)
+                print(error_msg)
+    
     def update_file_buttons(self):
         """更新文件按钮列表
         只需要在创建和另存为的时候调用
         """
-        # 清空现有按钮
         while self.button_layout.count():
             child = self.button_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
-        # 生成新按钮
-        dir = QDir(self.monitor_path)
-        for file_info in dir.entryInfoList(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllEntries):
+        # 生成新按钮 - 修复变量名冲突
+        directory = QDir(self.monitor_path)  # 使用directory代替dir，避免与内置函数冲突
+        for file_info in directory.entryInfoList(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllEntries):
             btn = QPushButton(file_info.fileName())
             btn.setCheckable(True)
             btn.setStyleSheet("""
@@ -296,10 +406,23 @@ class PhysicsSimulatorWindow(QMainWindow):
                     border: 1px solid #ddd;
                     border-radius: 3px;
                 }
-                QPushButton:hover { background-color: #b0b0b0; }
-                QPushButton:checked { background-color: #a0a0a0; }
+                QPushButton:hover { background-color: #f0f0f0; }
+                QPushButton:checked { background-color: #e0e0ff; }
             """)
             btn.setToolTip(file_info.absoluteFilePath())
+            
+            # 设置自定义属性存储文件信息
+            btn.file_path = file_info.absoluteFilePath()  # 存储完整路径
+            btn.is_directory = file_info.isDir()         # 标记是否是目录
+            
+            # 安装事件过滤器以捕获双击事件
+            btn.installEventFilter(self)
+            
+            # 启用右键菜单
+            btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            btn.customContextMenuRequested.connect(
+                lambda point, b=btn: self.show_file_context_menu(b, point)
+            )
             self.button_group.addButton(btn)
             self.button_layout.addWidget(btn)
 
