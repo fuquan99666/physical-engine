@@ -269,6 +269,9 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.spring_selection = None
         self.springs = []
 
+        self.time_scale = 1.0  # 添加时间流速属性
+        self.simulator.set_time_scale(self.time_scale)  # 设置模拟器初始时间流速
+
     def init_file_browser(self):
         """初始化文件浏览器侧边栏"""
         # 创建文件浏览器容器
@@ -484,10 +487,6 @@ class PhysicsSimulatorWindow(QMainWindow):
         drawmap.pic_for_all(file_path)
         # 后续可添加双击打开等逻辑
 
-    def loading_new_files(self):
-        # 清空所有的画面并加载新画面。
-        # 且让我想想怎么写
-        pass
 
     def init_menubar(self):
         # 创建菜单栏
@@ -813,6 +812,13 @@ class PhysicsSimulatorWindow(QMainWindow):
         api_key_layout.addWidget(self.api_key_input)
         api_key_layout.addWidget(self.save_api_key_btn)
 
+        # 添加时间流速控制
+        self.time_scale_label = QLabel("时间流速: 1.0x")
+        self.time_scale_slider = QSlider(Qt.Orientation.Horizontal)
+        self.time_scale_slider.setRange(10, 200)  # 0.1x 到 2.0x
+        self.time_scale_slider.setValue(100)  # 默认1.0x
+        self.time_scale_slider.valueChanged.connect(self.update_time_scale)
+
         self.start_btn = QPushButton("Start")
 
         self.gravity_slider = QSlider(Qt.Orientation.Horizontal)
@@ -833,6 +839,11 @@ class PhysicsSimulatorWindow(QMainWindow):
         control_layout = QVBoxLayout()
         control_layout.addLayout(api_key_layout)  # 将API密钥输入添加到控制面板顶部
         control_layout.addWidget(self.start_btn)
+
+        # 添加时间流速控制到面板
+        control_layout.addWidget(self.time_scale_label)
+        control_layout.addWidget(self.time_scale_slider)
+
         control_layout.addWidget(self.gravity_label)
         control_layout.addWidget(self.gravity_slider)
 
@@ -875,6 +886,13 @@ class PhysicsSimulatorWindow(QMainWindow):
         main_layout.addWidget(self.splitter)
 
         central_widget.setLayout(main_layout)
+
+    def update_time_scale(self, value):
+        """更新时间流速因子"""
+        # 将滑块值(10-200)转换为0.1-2.0的范围
+        time_scale = value / 100.0
+        self.time_scale_label.setText(f"时间流速: {time_scale:.1f}x")
+        self.simulator.set_time_scale(time_scale)
 
     def save_api_key(self):
         """保存用户输入的API密钥"""
@@ -1119,8 +1137,11 @@ class PhysicsSimulatorWindow(QMainWindow):
             print(e)
 
     def update_scene(self):
+        # 使用时间缩放因子调整模拟步长
+        scaled_dt = (1 / 600.0) * self.simulator.time_scale
+
         for _ in range(10):  # 多步模拟提升平滑度
-            self.simulator.step(1 / 600.0)
+            self.simulator.step(scaled_dt)
 
         for entry in self.all_item:
             item = entry["item"]
