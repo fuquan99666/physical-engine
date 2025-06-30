@@ -8,11 +8,12 @@ import requests
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QSlider,
     QVBoxLayout, QHBoxLayout, QLabel, QGraphicsView, QGraphicsScene,
-    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem,QSplitter,QMenu,
-    QDialog,QFormLayout,QLineEdit,QDialogButtonBox,QCheckBox,QColorDialog,QInputDialog, QTreeView,QScrollArea, QButtonGroup,
-    QTextEdit,QMessageBox,QFrame,
+    QGraphicsEllipseItem, QGraphicsLineItem, QToolBar, QGraphicsRectItem, QSplitter, QMenu,
+    QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QColorDialog, QInputDialog, QTreeView, QScrollArea,
+    QButtonGroup,
+    QTextEdit, QMessageBox, QFrame,
 )
-from PyQt6.QtCore import Qt, QTimer, QPointF,QDir, QThread, pyqtSignal, QDir, QRectF, QSizeF
+from PyQt6.QtCore import Qt, QTimer, QPointF, QDir, QThread, pyqtSignal, QDir, QRectF, QSizeF
 from PyQt6.QtGui import QColor, QAction, QPen, QPainter, QFileSystemModel
 import pyqtgraph as pg
 import os
@@ -23,44 +24,75 @@ from PyQt6.QtCore import QUrl
 import drawmap
 import sqlite3
 
+from time import sleep
+
 class ChatAPICaller(QThread):
     finished = pyqtSignal(str)
 
-    def __init__(self, prompt):
+    def __init__(self, prompt,api_key):
         super().__init__()
         self.prompt = prompt
+        self.api_key = api_key  # 存储API密钥
 
     def run(self):
-        url = "https://api.dify.ai/v1/chat-messages"
+        # DeepSeek API 配置
+        url = "https://api.deepseek.com/v1/chat/completions"
+        api_key = ""  # 替换为你的实际API密钥
+
         headers = {
-            "Authorization": "Bearer app-DWvdU4wMPLqDuSQGtx2OCRlt",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+
+        # 构造符合DeepSeek要求的消息格式
+        messages = [
+            {"role": "user", "content": self.prompt}
+        ]
+
         data = {
-            "inputs": {},
-            "query": self.prompt,
-            "response_mode": "blocking",
-            "conversation_id": "",
-            "user": "test-user"
+            "model": "deepseek-chat",  # 使用最新模型
+            "messages": messages,
+            "temperature": 0.7,  # 控制回复的随机性 (0-1)
+            "max_tokens": 2000,  # 限制回复长度
+            "stream": False  # 非流式响应
         }
 
-        try:
-            res = requests.post(url, headers=headers, json=data, timeout=180)
-            if res.status_code == 200:
-                reply = res.json().get("answer", "[无回答]")
-            else:
-                reply = f"[失败 {res.status_code}] {res.text}"
-        except requests.exceptions.Timeout:
-            reply = "[超时] 服务器3分钟无响应"
-        except Exception as e:
-            reply = f"[异常] {str(e)}"
+        max_retries = 2
+        timeout_sec = 180  # 3分钟超时
+
+        for attempt in range(max_retries + 1):
+            try:
+                res = requests.post(url, headers=headers, json=data, timeout=timeout_sec)
+
+                if res.status_code == 200:
+                    # 解析DeepSeek的响应格式
+                    reply = res.json()["choices"][0]["message"]["content"]
+                    break
+                elif res.status_code == 401:  # 未授权错误
+                    reply = "[错误] API密钥无效或已过期"
+                    break
+                else:
+                    if attempt < max_retries and res.status_code == 429:  # 限速错误
+                        sleep(5)  # 等待5秒后重试
+                        continue
+                    reply = f"[HTTP错误 {res.status_code}] {res.text[:200]}"  # 截断长错误
+                    break
+
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    sleep(10)  # 等待10秒后重试
+                    continue
+                reply = f"[超时] 超过{timeout_sec}秒未响应"
+                break
+
+            except Exception as e:
+                reply = f"[异常] {str(e)}"
+                break
 
         self.finished.emit(reply)
 
 
-
 from simulator import PhysicsSimulator as ph
-
 
 
 class VideoView(QGraphicsView):
@@ -83,12 +115,13 @@ class VideoView(QGraphicsView):
         if self.frame_proxy:
             fw = self.frame_proxy.boundingRect().width()
             fh = self.frame_proxy.boundingRect().height()
-            self.frame_proxy.setPos((view_size.width()-fw)/2, (view_size.height()-fh)/2)
+            self.frame_proxy.setPos((view_size.width() - fw) / 2, (view_size.height() - fh) / 2)
         # 放置滑块在底部中心，距底部留20像素
         if self.slider_proxy:
             sw = self.slider_proxy.boundingRect().width()
             sh = self.slider_proxy.boundingRect().height()
-            self.slider_proxy.setPos((view_size.width()-sw)/2, view_size.height()-sh-20)
+            self.slider_proxy.setPos((view_size.width() - sw) / 2, view_size.height() - sh - 20)
+
 
 class HomePage(QMainWindow):
     def __init__(self):
@@ -158,7 +191,7 @@ class HomePage(QMainWindow):
         slider.setValue(50)  # 默认50%
 
         # 将滑块值映射到0-1并设置音量:contentReference[oaicite:6]{index=6}
-        slider.valueChanged.connect(lambda v: self.audio_output.setVolume(v/100))
+        slider.valueChanged.connect(lambda v: self.audio_output.setVolume(v / 100))
         self.view.slider_proxy = self.view.scene().addWidget(slider)
 
     def on_start_clicked(self):
@@ -191,10 +224,9 @@ class HomePage(QMainWindow):
         self.media_player.setLoops(QMediaPlayer.Loops.Infinite)  # 循环播放
 
     def open_simulator(self):
-        #不再播放视频
+        # 不再播放视频
         self.media_player.stop()
         self.media_player.setSource(QUrl())
-
 
         self.simulator = PhysicsSimulatorWindow()
         self.simulator.show()
@@ -203,7 +235,6 @@ class HomePage(QMainWindow):
     def show_history(self):
         # 这里可以添加历史记录功能
         QMessageBox.information(self, "历史记录", "历史记录功能将在后续版本中实现", QMessageBox.StandardButton.Ok)
-
 
 
 class PhysicsSimulatorWindow(QMainWindow):
@@ -223,11 +254,11 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.toolbar = QToolBar("Main ToolBar")
         self.addToolBar(self.toolbar)
 
-        self.current_file=None
+        self.current_file = None
         self._init_toolbar()
         self._init_ui()
         self.monitor_path = './dataset/'
-        
+
         self.init_file_browser()
         self.init_file_status_bar()
         self.timer = QTimer()
@@ -262,11 +293,11 @@ class PhysicsSimulatorWindow(QMainWindow):
         scroll.setWidget(self.button_container)
         scroll.setWidgetResizable(True)
         browser_layout.addWidget(scroll)
-        directory=QDir(self.monitor_path)
+        directory = QDir(self.monitor_path)
         for file_info in directory.entryInfoList(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllEntries):
             btn = QPushButton(file_info.fileName())
             # ... 其他按钮设置代码保持不变 ...
-            
+
             # 启用右键菜单
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
@@ -282,23 +313,23 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.file_timer = QTimer()
         self.file_timer.timeout.connect(self.update_file_buttons)
         self.file_timer.start(2000)
-        
-            
+
         # 将文件浏览器添加到主界面
         self.splitter.insertWidget(0, self.file_browser)  # 根据QSplitter结构调整
-    def show_file_context_menu(self,button,point):
+
+    def show_file_context_menu(self, button, point):
         menu = QMenu(self)
-        
+
         # 删除操作
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(lambda checked, b=button: self.delete_file_or_folder(b))
         menu.addAction(delete_action)
-        
+
         # 重命名操作（可选）
         rename_action = QAction("重命名", self)
         rename_action.triggered.connect(lambda checked, b=button: self.rename_file_or_folder(b))
         menu.addAction(rename_action)
-        
+
         # 显示菜单
         menu.exec(button.mapToGlobal(point))
 
@@ -307,7 +338,7 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.file_status_container = QWidget()
         file_status_layout = QHBoxLayout(self.file_status_container)
         file_status_layout.setContentsMargins(5, 2, 5, 2)
-        
+
         # 创建文件名标签
         self.file_name_label = QLabel(f"当前文件: {self.current_file}")
         self.file_name_label.setStyleSheet("""
@@ -319,10 +350,10 @@ class PhysicsSimulatorWindow(QMainWindow):
                 font-weight: bold;
             }
         """)
-        
+
         file_status_layout.addWidget(self.file_name_label)
         file_status_layout.addStretch()  # 添加弹性空间
-        
+
         # 将状态栏容器添加到主窗口
         self.addToolBarBreak()  # 确保新工具栏在原有工具栏下方
         self.file_status_toolbar = QToolBar("File Status")
@@ -332,18 +363,17 @@ class PhysicsSimulatorWindow(QMainWindow):
     def update_file_status(self):
         """更新文件状态栏显示"""
         self.file_name_label.setText(f"当前文件: {self.current_file}")
-        
 
     def delete_file_or_folder(self, button):
         """删除文件或文件夹"""
         file_path = button.file_path
         is_directory = button.is_directory
-        
+
         # 创建确认对话框
         confirm_dialog = QDialog(self)
         confirm_dialog.setWindowTitle("确认删除")
         layout = QVBoxLayout(confirm_dialog)
-        
+
         message = QLabel(f"确定要永久删除文件吗？\n{file_path.split('/')[-1]}")
         layout.addWidget(message)
         # 添加按钮
@@ -352,18 +382,18 @@ class PhysicsSimulatorWindow(QMainWindow):
         buttons.accepted.connect(confirm_dialog.accept)
         buttons.rejected.connect(confirm_dialog.reject)
         layout.addWidget(buttons)
-        
+
         # 显示对话框
         if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
             try:
-                if file_path.split('/')[-1]==self.current_file:
+                if file_path.split('/')[-1] == self.current_file:
                     raise Exception('不能删除选择中的文件')
                 # 删除文件
                 os.remove(file_path)
                 self.statusBar().showMessage(f"已删除文件: {file_path.split('/')[-1]}", 3000)
                 # 刷新文件列表
                 self.update_file_buttons()
-                
+
             except Exception as e:
                 error_msg = f"删除失败: {str(e)}"
                 self.statusBar().showMessage(error_msg, 5000)
@@ -373,10 +403,10 @@ class PhysicsSimulatorWindow(QMainWindow):
         """重命名文件或文件夹"""
         file_path = button.file_path
         is_directory = button.is_directory
-        
+
         # 获取当前名称
         current_name = os.path.basename(file_path)
-        
+
         # 弹出输入对话框
         new_name, ok = QInputDialog.getText(
             self,
@@ -385,28 +415,28 @@ class PhysicsSimulatorWindow(QMainWindow):
             QLineEdit.EchoMode.Normal,
             current_name
         )
-        
+
         if ok and new_name and new_name != current_name:
             try:
 
                 # 构建新路径
                 dir_path = os.path.dirname(file_path)
                 new_path = os.path.join(dir_path, new_name)
-                
+
                 # 执行重命名
                 os.rename(file_path, new_path)
-                if file_path.split('/')[-1]==self.current_file:
-                    self.current_file=new_path.split('\\')[-1]
+                if file_path.split('/')[-1] == self.current_file:
+                    self.current_file = new_path.split('\\')[-1]
                     self.update_file_status()
                 # 刷新文件列表
                 self.update_file_buttons()
-                
+
                 self.statusBar().showMessage(f"已重命名为: {new_name}", 3000)
             except Exception as e:
                 error_msg = f"重命名失败: {str(e)}"
                 self.statusBar().showMessage(error_msg, 5000)
                 print(error_msg)
-    
+
     def update_file_buttons(self):
         """更新文件按钮列表
         只需要在创建和另存为的时候调用
@@ -432,14 +462,14 @@ class PhysicsSimulatorWindow(QMainWindow):
                 QPushButton:checked { background-color: #d0d0d0; }
             """)
             btn.setToolTip(file_info.absoluteFilePath())
-            
+
             # 设置自定义属性存储文件信息
             btn.file_path = file_info.absoluteFilePath()  # 存储完整路径
-            btn.is_directory = file_info.isDir()         # 标记是否是目录
-            
+            btn.is_directory = file_info.isDir()  # 标记是否是目录
+
             # 安装事件过滤器以捕获双击事件
             btn.installEventFilter(self)
-            
+
             # 启用右键菜单
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
@@ -519,10 +549,11 @@ class PhysicsSimulatorWindow(QMainWindow):
 
     def new_file(self):
         self.simulator.data_handler.create_initial_file()
-        self.current_file=self.simulator.data_handler.current_file.split('/')[-1]
+        self.current_file = self.simulator.data_handler.current_file.split('/')[-1]
         self.update_file_status()
-        self.statusBar().showMessage("已创建新文件",3000)
+        self.statusBar().showMessage("已创建新文件", 3000)
         self.update_file_buttons()  # 在创建新文件后再更新
+
     def open_file(self, index):
         path = self.model.filePath(index)
         if os.path.isfile(path):
@@ -738,9 +769,8 @@ class PhysicsSimulatorWindow(QMainWindow):
                     self.simulator.space.add(new_shape)
                     self.selected_item_data["shape"] = new_shape
 
-
-                    shape=new_shape
-                    #此处的数据更改尚未完成，因为有点复杂，可能需要修改segment的存储代码结构
+                    shape = new_shape
+                    # 此处的数据更改尚未完成，因为有点复杂，可能需要修改segment的存储代码结构
 
                     item.setLine(new_shape.a.x, new_shape.a.y, new_shape.b.x, new_shape.b.y)
                 item.setFlag(item.GraphicsItemFlag.ItemIsMovable, not is_static)
@@ -769,7 +799,22 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.selected_item_data = None
         self.all_item = []
 
+
+        # 在控制面板顶部添加API密钥输入区域
+        api_key_layout = QHBoxLayout()
+        self.api_key_label = QLabel("DeepSeek API Key:")
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)  # 密码模式隐藏输入
+        self.api_key_input.setPlaceholderText("输入您的API密钥")
+        self.save_api_key_btn = QPushButton("保存")
+        self.save_api_key_btn.clicked.connect(self.save_api_key)
+
+        api_key_layout.addWidget(self.api_key_label)
+        api_key_layout.addWidget(self.api_key_input)
+        api_key_layout.addWidget(self.save_api_key_btn)
+
         self.start_btn = QPushButton("Start")
+
         self.gravity_slider = QSlider(Qt.Orientation.Horizontal)
         self.gravity_slider.setRange(-100, 100)
         self.gravity_slider.setValue(self.gravity)
@@ -786,6 +831,7 @@ class PhysicsSimulatorWindow(QMainWindow):
         self.H_slider.valueChanged.connect(self.update_F)
 
         control_layout = QVBoxLayout()
+        control_layout.addLayout(api_key_layout)  # 将API密钥输入添加到控制面板顶部
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.gravity_label)
         control_layout.addWidget(self.gravity_slider)
@@ -797,10 +843,10 @@ class PhysicsSimulatorWindow(QMainWindow):
         # self.plot.setYRange(0, 400)
         # self.plot_data = []
         # self.plot_curve = self.plot.plot(self.plot_data, pen='g')
+
         # 聊天记录框（只读）
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
-
 
         # 输入框和发送按钮
         input_layout = QHBoxLayout()
@@ -811,11 +857,9 @@ class PhysicsSimulatorWindow(QMainWindow):
         input_layout.addWidget(self.input_line)
         input_layout.addWidget(self.send_button)
 
-
-
         right_layout = QVBoxLayout()
         right_layout.addLayout(control_layout)
-        #right_layout.addWidget(self.plot)
+        # right_layout.addWidget(self.plot)
         right_layout.addWidget(self.chat_display)
         right_layout.addLayout(input_layout)
 
@@ -832,7 +876,27 @@ class PhysicsSimulatorWindow(QMainWindow):
 
         central_widget.setLayout(main_layout)
 
+    def save_api_key(self):
+        """保存用户输入的API密钥"""
+        api_key = self.api_key_input.text().strip()
+        if not api_key:
+            QMessageBox.warning(self, "警告", "请输入有效的API密钥")
+            return
+
+        # 简单验证密钥格式（实际使用中可增加更复杂的验证）
+        if not api_key.startswith("sk-"):
+            QMessageBox.warning(self, "警告", "API密钥格式不正确，应以'sk-'开头")
+            return
+
+        self.api_key = api_key
+        self.api_key_input.clear()
+        QMessageBox.information(self, "成功", "API密钥已保存！")
+
     def send_message(self):
+        if not hasattr(self, 'api_key') or not self.api_key:
+            QMessageBox.warning(self, "需要API密钥", "请先输入并保存DeepSeek API密钥")
+            return
+
         user_msg = self.input_line.text().strip()
         if not user_msg:
             return
@@ -840,18 +904,16 @@ class PhysicsSimulatorWindow(QMainWindow):
         # 显示用户消息
         self.chat_display.append(f"你：{user_msg}")
         self.input_line.clear()
-
         self.chat_display.append("🤖 正在生成回复...")
 
-        self.api_thread = ChatAPICaller(user_msg)
+        # 传递API密钥给线程
+        self.api_thread = ChatAPICaller(user_msg, self.api_key)
         self.api_thread.finished.connect(self.on_api_reply)
         self.api_thread.start()
 
     def on_api_reply(self, reply_text: str):
         """收到线程返回的结果后更新到聊天框"""
         self.chat_display.append(f"机器人：{reply_text}")
-
-
 
     def toggle_simulation(self):
         self.running = not self.running
@@ -868,10 +930,10 @@ class PhysicsSimulatorWindow(QMainWindow):
 
         for obj in self.all_item:
             self.scene.removeItem(obj["item"])
-        for spring,line in self.springs:
+        for spring, line in self.springs:
             self.scene.removeItem(line)
-        self.springs.clear()#从弹簧组中移除
-          
+        self.springs.clear()  # 从弹簧组中移除
+
         self.all_item.clear()
 
         self.selected_item_data = None
@@ -991,8 +1053,8 @@ class PhysicsSimulatorWindow(QMainWindow):
         line.setPen(pen)
         self.scene.addItem(line)
         self.springs.append((spring, line))
-     
-        self.update_spring_line_with_smoothing(spring,line,1)
+
+        self.update_spring_line_with_smoothing(spring, line, 1)
 
         print("Spring created. Click Start to see it in action.")
 
@@ -1004,18 +1066,17 @@ class PhysicsSimulatorWindow(QMainWindow):
             return
         item = self.selected_item_data["item"]
         body = self.selected_item_data["body"]
-        shape=self.selected_item_data["shape"]
-        for spring,line in self.springs:
+        shape = self.selected_item_data["shape"]
+        for spring, line in self.springs:
             if spring.a is body or spring.b is body:
                 self.scene.removeItem(line)
                 self.simulator.space.remove(spring)
-                self.springs.remove((spring,line))#从弹簧组中移除
+                self.springs.remove((spring, line))  # 从弹簧组中移除
 
         self.scene.removeItem(item)
         self.simulator.space.remove(body, shape)
         self.all_item.remove(self.selected_item_data)
         self.selected_item_data = None
-
 
     def prepare_add_spring(self):
         self.spring_selection = []
@@ -1074,8 +1135,8 @@ class PhysicsSimulatorWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    home_page=HomePage()
-    home_page.resize(1050,600)
+    home_page = HomePage()
+    home_page.resize(1050, 600)
     home_page.show()
     sys.exit(app.exec())
 
